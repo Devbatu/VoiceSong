@@ -1,0 +1,16 @@
+# AI Model packages - install separately with longer timeout
+# Bu paketler büyük olduğu için ayrı yüklenmelidir
+
+# PyTorch (CPU version for faster download - ~200MB instead of 2GB)
+--index-url https://download.pytorch.org/whl/cpu
+torch==2.1.0+cpu
+torchaudio==2.1.0+cpu
+
+# Audio AI Libraries
+scipy==1.11.3
+librosa==0.10.1
+pydub==0.25.1
+
+# Optional: AI Models (çok büyük - sadece ihtiyaç duyulursa yükleyin)
+# audiocraft==1.3.0
+# demucs==4.0.1
