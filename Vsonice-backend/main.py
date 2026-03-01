@@ -1033,7 +1033,7 @@ async def save_voice_profile(
             from services.openvoice_service import get_or_load_converter, extract_speaker_embedding
             import numpy as np
             converter = get_or_load_converter()
-            se = extract_speaker_embedding(str(audio_path), converter)
+            se = extract_speaker_embedding(str(audio_path), converter, is_target=True)
             np.save(str(profile_dir / "speaker_embedding.npy"), se.cpu().numpy())
             has_embedding = True
             print(f"[INFO] ✅ Speaker embedding cached for profile '{name}'")
@@ -1423,10 +1423,10 @@ async def clone_voice_and_sing(
             target_se = cached_target_se
         else:
             print(f"[INFO] 🎤 Kullanıcı ses kimliği çıkarılıyor (Speaker Embedding)...")
-            target_se = extract_speaker_embedding(str(voice_path), converter)
+            target_se = extract_speaker_embedding(str(voice_path), converter, is_target=True)
         
         print(f"[INFO] 🎵 Orijinal şarkıcı ses kimliği çıkarılıyor...")
-        source_se = extract_speaker_embedding(str(vocals_path), converter)
+        source_se = extract_speaker_embedding(str(vocals_path), converter, is_target=False)
         
         print(f"[INFO] ✅ Speaker embeddings hazır!")
 
@@ -1440,16 +1440,16 @@ async def clone_voice_and_sing(
         converted_vocal_path = str(TEMP_DIR / "converted_vocal.wav")
         
         # Convert voice using deep neural network
-        # tau=0.3 → ElevenLabs-style balanced conversion
-        #   - Low enough to transform voice identity
-        #   - High enough to preserve prosody, expression, and natural quality
-        #   - ElevenLabs uses similar range for their tone-color transfer
+        # v6: tau=0.12 — MUCH stronger identity transfer for true voice cloning
+        #   - Lower tau = stronger voice identity change toward target
+        #   - 0.12 aggressively transfers the user's voice character
+        #   - Preserves melody/lyrics from source but sounds like the user
         y_converted, conv_sr = convert_voice_chunked(
             source_audio_path=str(vocals_path),
             source_se=source_se,
             target_se=target_se,
             output_path=converted_vocal_path,
-            tau=0.3,
+            tau=0.12,
             converter=converter
         )
         
@@ -1487,34 +1487,37 @@ async def clone_voice_and_sing(
             gain = min(gain, 6.0)
             return (signal * gain).astype(np.float32)
         
-        # ====== VOKAL İŞLEME ZİNCİRİ (ElevenLabs-style: minimal, surgical) ======
-        print(f"[INFO] 🔧 Vokal mastering zinciri (ElevenLabs-quality)...")
+        # ====== VOKAL İŞLEME ZİNCİRİ (v6: Minimal — preserve neural output) ======
+        # v6 Philosophy: The neural network already did the hard work.
+        # Heavy post-processing DESTROYS the cloned voice quality.
+        # Only apply essential surgical corrections.
+        print(f"[INFO] 🔧 Vokal mastering zinciri (v6: minimal, preserve clone identity)...")
         
-        # 1) High-pass: Sadece alçak uğultuyu temizle
+        # 1) High-pass: Only remove sub-bass rumble
         sos_hp = butter(3, 75, btype='high', fs=SR, output='sos')
         y_converted = sosfiltfilt(sos_hp, y_converted).astype(np.float32)
         print(f"[INFO] ✅ High-pass filter (75Hz, gentle)")
         
-        # 2) Body/Warmth EQ: Hafif sıcaklık ekle (vokal zayıflamasını önle)
+        # 2) Very subtle warmth (much less than before)
         sos_warm = butter(2, [180, 350], btype='band', fs=SR, output='sos')
         y_warmth = sosfiltfilt(sos_warm, y_converted).astype(np.float32)
-        y_converted = y_converted + y_warmth * 0.12  # Subtle warmth
-        print(f"[INFO] ✅ Warmth EQ (180-350Hz, +1dB)")
+        y_converted = y_converted + y_warmth * 0.06  # Half of before
+        print(f"[INFO] ✅ Subtle warmth (180-350Hz, +0.5dB)")
         
-        # 3) Dynamic de-esser (sadece gerçek sibilance'ı hedefle)
+        # 3) Gentle de-esser (only extreme sibilance)
         sos_sib = butter(2, 6000, btype='high', fs=SR, output='sos')
         y_sibilant = sosfiltfilt(sos_sib, y_converted).astype(np.float32)
         sib_env = np.abs(y_sibilant)
         sib_env = uf1d(sib_env, size=max(int(0.005 * SR), 1))
-        sib_threshold = np.percentile(sib_env, 88)  # Only top 12% (true sibilance)
+        sib_threshold = np.percentile(sib_env, 92)  # Only top 8% (extreme sibilance)
         sib_mask = np.clip(sib_env / (sib_threshold + 1e-10), 0, 1)
-        y_converted = y_converted - y_sibilant * sib_mask * 0.25  # Gentle
-        print(f"[INFO] ✅ Dynamic de-esser (6kHz+, gentle)")
+        y_converted = y_converted - y_sibilant * sib_mask * 0.15  # Very gentle
+        print(f"[INFO] ✅ Gentle de-esser (6kHz+, minimal)")
         
-        # 4) Presence EQ: Vokal netliği (çok hafif)
+        # 4) Subtle presence (less than before)
         sos_pres = butter(2, [2500, 5000], btype='band', fs=SR, output='sos')
         y_presence = sosfiltfilt(sos_pres, y_converted).astype(np.float32)
-        y_converted = y_converted + y_presence * 0.12  # Subtle presence
+        y_converted = y_converted + y_presence * 0.08  # Reduced
         
         nyq_safe = min(13000, SR // 2 - 100)
         if nyq_safe > 9000:
@@ -1523,68 +1526,16 @@ async def clone_voice_and_sing(
             y_converted = y_converted + y_air * 0.06  # Very subtle air
         print(f"[INFO] ✅ Presence + Air EQ (subtle)")
         
-        # 5) SKIP saturation — ElevenLabs doesn't add harmonics artificially
-        #    Neural vocoder (HiFi-GAN) already produces natural harmonics
-        print(f"[INFO] ✅ No saturation (ElevenLabs approach: preserve natural harmonics)")
+        # v6: SKIP saturation AND spectral environment matching
+        #     Spectral matching was pulling the cloned voice BACK toward
+        #     the original singer — completely counter-productive for cloning.
+        #     The neural model output IS the clone; don't fight it.
+        print(f"[INFO] ✅ No saturation (preserve natural harmonics)")
+        print(f"[INFO] ✅ No spectral env matching (preserve clone identity)")
         
-        # 6) Gentle compressor (preserve dynamics, just control peaks)
-        threshold_comp = 10 ** (-16.0 / 20)  # -16dB (very gentle)
-        ratio_comp = 1.8  # Soft ratio
-        block_size = max(int(SR * 0.02), 1)  # 20ms blocks
-        n_blocks = len(y_converted) // block_size + 1
-        gain_curve = np.ones(len(y_converted), dtype=np.float32)
-        
-        for bi in range(n_blocks):
-            bs = bi * block_size
-            be = min(bs + block_size, len(y_converted))
-            if bs >= len(y_converted):
-                break
-            block_rms = np.sqrt(np.mean(y_converted[bs:be] ** 2)) + 1e-10
-            if block_rms > threshold_comp:
-                over_db = 20 * np.log10(block_rms / threshold_comp)
-                red_db = over_db * (1.0 - 1.0 / ratio_comp)
-                gain_curve[bs:be] = 10 ** (-red_db / 20)
-        
-        smooth_n = max(int(SR * 0.02), 3)
-        gain_curve = uf1d(gain_curve, size=smooth_n)
-        y_converted = (y_converted * gain_curve).astype(np.float32)
-        print(f"[INFO] ✅ Gentle compressor (threshold=-16dB, ratio=1.8:1)")
-        
-        # 7) Spectral environment matching — make converted vocal sit
-        #    in the same acoustic space as the original
-        try:
-            orig_mono = y_original_vocal[:min(len(y_original_vocal), len(y_converted))]
-            conv_len = min(len(y_converted), len(orig_mono))
-            
-            # Compare spectral envelopes at low resolution (captures room/mic character)
-            S_orig = librosa.stft(orig_mono[:conv_len], n_fft=2048, hop_length=512)
-            S_conv = librosa.stft(y_converted[:conv_len], n_fft=2048, hop_length=512)
-            
-            mag_orig = np.abs(S_orig) + 1e-8
-            mag_conv = np.abs(S_conv) + 1e-8
-            phase_conv = np.angle(S_conv)
-            
-            # Smooth spectral envelopes heavily (captures tonal balance, not detail)
-            from scipy.ndimage import median_filter
-            env_orig = median_filter(mag_orig, size=(15, 7))
-            env_conv = median_filter(mag_conv, size=(15, 7))
-            
-            # Compute and apply gentle spectral matching
-            env_ratio = np.clip(env_orig / env_conv, 0.6, 1.7)
-            
-            # Apply only 25% of the matching (subtle tonal balance correction)
-            mag_matched = mag_conv * (1.0 + 0.25 * (env_ratio - 1.0))
-            S_matched = mag_matched * np.exp(1j * phase_conv)
-            y_matched = librosa.istft(S_matched, hop_length=512, length=conv_len)
-            y_converted[:conv_len] = y_matched.astype(np.float32)
-            
-            print(f"[INFO] ✅ Spectral environment matching (acoustic space transfer)")
-        except Exception as e:
-            print(f"[INFO] ⚠️ Environment matching skipped: {e}")
-        
-        # 8) Loudness normalize
-        y_converted = loudness_normalize(y_converted, target_lufs=-12.0, sr=SR)
-        print(f"[INFO] ✅ Loudness normalization (target=-12 LUFS)")
+        # 6) Loudness normalize
+        y_converted = loudness_normalize(y_converted, target_lufs=-11.0, sr=SR)
+        print(f"[INFO] ✅ Loudness normalization (target=-11 LUFS)")
         
         # Peak limit vocal
         vpeak = np.abs(y_converted).max()
@@ -1611,20 +1562,21 @@ async def clone_voice_and_sing(
         rms_i = float(np.sqrt(np.mean(y_instr_stereo**2))) + 1e-8
         print(f"[INFO] Vokal RMS: {rms_v:.4f}, Enstrümantal RMS: {rms_i:.4f}, Oran: {rms_v/rms_i:.2f}")
         
-        # Auto-balance: Ensure vocal sits 2-4dB above instrumental
-        target_ratio = 1.5  # Vocal ~3.5dB louder than instrumental
+        # v6 Auto-balance: Vocal should sit ~4-5dB above instrumental
+        # for clear "this person is singing" effect
+        target_ratio = 1.8  # Vocal ~5dB louder than instrumental
         current_ratio = rms_v / rms_i
         if current_ratio < target_ratio * 0.8:
-            # Vocal too quiet — boost vocal slightly
-            vocal_gain = min(target_ratio / current_ratio, 1.5)
-            instr_gain = 0.72
+            # Vocal too quiet — boost vocal
+            vocal_gain = min(target_ratio / current_ratio, 1.8)
+            instr_gain = 0.65
         elif current_ratio > target_ratio * 1.5:
             # Vocal too loud — reduce vocal slightly
             vocal_gain = target_ratio / current_ratio
-            instr_gain = 0.75
+            instr_gain = 0.70
         else:
             vocal_gain = 1.0
-            instr_gain = 0.72
+            instr_gain = 0.65
         
         print(f"[INFO] Mix balance: vocal_gain={vocal_gain:.2f}, instr_gain={instr_gain:.2f}")
         

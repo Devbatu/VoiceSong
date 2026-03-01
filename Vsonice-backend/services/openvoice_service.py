@@ -207,10 +207,11 @@ def match_envelope(converted, original, frame_ms=25, sr=22050):
     ], dtype=np.float32)
     
     # Compute gain (clip to prevent extreme amplification/attenuation)
-    gains = np.clip(orig_env / conv_env, 0.25, 4.0)
+    # v6: Tighter range to preserve user's natural dynamics
+    gains = np.clip(orig_env / conv_env, 0.4, 2.5)
     
     # Smooth to avoid rapid gain changes
-    smooth_size = max(3, n_frames // 50)
+    smooth_size = max(5, n_frames // 40)
     gains = uniform_filter1d(gains, size=smooth_size)
     
     # Interpolate to full sample length
@@ -266,10 +267,10 @@ def unified_spectral_enhance(audio, original, sr):
     else:
         noise_profile = np.percentile(mag_conv, 5, axis=1, keepdims=True)
     
-    # Gentle spectral subtraction (preserve detail, remove floor)
-    noise_reduction = np.clip(mag_conv - noise_profile * 1.5, 0, None)
-    # Blend: 70% original + 30% denoised (very gentle)
-    mag_work = mag_conv * 0.7 + noise_reduction * 0.3
+    # v6: More conservative spectral subtraction (preserve voice detail)
+    noise_reduction = np.clip(mag_conv - noise_profile * 1.2, 0, None)
+    # Blend: 85% original + 15% denoised (very gentle, preserve character)
+    mag_work = mag_conv * 0.85 + noise_reduction * 0.15
     
     # ── 2) Formant Smoothing (temporal axis) ──
     # Smooth each frequency bin across time → prevents robotic formant jumps
@@ -295,26 +296,31 @@ def unified_spectral_enhance(audio, original, sr):
     mag_work = mag_work * (1.0 - strength_curve) + mag_freq_smooth * strength_curve
     
     # ── 4) Expression Transfer from Original ──
-    # ElevenLabs key: the converted audio should carry the original's
-    # spectral fine structure (which encodes expression, vibrato, articulation)
+    # CRITICAL: We only transfer the FINE TEMPORAL DYNAMICS (vibrato, breath)
+    # NOT the spectral identity. Using too much blend mixes the original
+    # singer's voice back in, defeating the purpose of cloning.
     # 
-    # We blend 20% of the original's spectral magnitude into the converted.
-    # This is like "style injection" — gives back the emotional nuance
-    # that the tone-color-converter stripped away.
-    expression_blend = 0.20
+    # v6: Reduced from 20% → 5% and only transfer high-frequency detail
+    # (>4kHz) which carries articulation/consonants but not voice identity.
+    expression_blend = 0.05  # Very subtle — just articulation detail
     
-    # Scale original magnitude to similar level as converted (avoid volume artifacts)
+    # Scale original magnitude to similar level as converted
     scale = (np.mean(mag_work) + 1e-8) / (np.mean(mag_orig) + 1e-8)
     mag_orig_scaled = mag_orig * scale
     
     # Only blend in voiced/active regions (don't blend silence)
     activity = np.mean(mag_work, axis=0, keepdims=True)
     activity_mask = (activity > np.percentile(activity, 15)).astype(np.float32)
-    # Smooth the mask
     activity_mask = uniform_filter1d(activity_mask, size=5, axis=1)
     
-    mag_work = mag_work * (1.0 - expression_blend * activity_mask) + \
-               mag_orig_scaled * (expression_blend * activity_mask)
+    # Only blend high-frequency detail (>4kHz) — these carry articulation
+    # but NOT voice identity (which lives in 300-3500Hz formant region)
+    hf_mask = np.zeros((n_bins, 1), dtype=np.float32)
+    hf_start = int(4000 / (sr / 2) * n_bins)
+    hf_mask[hf_start:] = 1.0
+    
+    blend_mask = expression_blend * activity_mask * hf_mask
+    mag_work = mag_work * (1.0 - blend_mask) + mag_orig_scaled * blend_mask
     
     # ── 5) Reconstruct with original phase (preserves temporal structure) ──
     S_result = mag_work * np.exp(1j * phase_conv)
@@ -373,17 +379,18 @@ def transfer_prosody_f0(converted, original, sr):
         f0_orig[both_voiced] / (f0_conv[both_voiced] + 1e-10) + 1e-10
     )
     
-    # Clip to small corrections only (±1.5 semitones)
-    # Large deviations = model correctly changed the pitch; don't fight it
-    semitones = np.clip(semitones, -1.5, 1.5)
+    # Clip to very small corrections only (±0.8 semitones)
+    # The model's pitch IS the user's natural pitch — don't fight it!
+    # Only correct micro-deviations (vibrato smoothing, slight drift)
+    semitones = np.clip(semitones, -0.8, 0.8)
     
     # Heavy smoothing of correction curve (prevents rapid pitch jumps)
     smooth_size = max(7, n_frames // 60)
     semitones = uniform_filter1d(semitones, size=smooth_size)
     semitones[~both_voiced] = 0.0
     
-    # Apply 60% of the correction (gentle guidance, not forced alignment)
-    semitones = semitones * 0.6
+    # Apply only 30% of the correction (very gentle, preserve user's voice)
+    semitones = semitones * 0.3
     
     # Apply pitch correction using long segments (fewer boundary artifacts)
     segment_frames = 40  # ~1 second segments
@@ -456,7 +463,7 @@ def transfer_micro_dynamics(converted, original, sr):
     ], dtype=np.float32)
     
     # Compute micro-dynamics ratio
-    micro_gains = np.clip(orig_env / conv_env, 0.4, 2.5)
+    micro_gains = np.clip(orig_env / conv_env, 0.5, 2.0)
     
     # Heavy smoothing (key to avoiding crackling)
     smooth_size = max(7, n_frames // 150)
@@ -466,49 +473,49 @@ def transfer_micro_dynamics(converted, original, sr):
     frame_centers = np.arange(n_frames) * hop + frame // 2
     gain_curve = np.interp(np.arange(min_len), frame_centers, micro_gains).astype(np.float32)
     
-    # Apply 50% of micro-dynamics (balance between expression and safety)
-    gain_curve = 1.0 + (gain_curve - 1.0) * 0.50
+    # v6: Apply only 25% of micro-dynamics (preserve user's voice character)
+    gain_curve = 1.0 + (gain_curve - 1.0) * 0.25
     
     return (converted * gain_curve).astype(np.float32)
 
 
 def denoise_converted(audio, sr):
     """
-    Gentle neural artifact removal using noisereduce.
-    Applied ONLY once as first step, with conservative settings.
+    Very gentle neural artifact removal using noisereduce.
+    v6: Reduced from 0.35 → 0.20 to preserve voice character.
+    Each noisereduce pass adds a tiny spectral smearing — less is more.
     """
     cleaned = nr.reduce_noise(
         y=audio,
         sr=sr,
-        prop_decrease=0.35,     # Gentle (was 0.4)
+        prop_decrease=0.20,     # v6: Much gentler (was 0.35)
         stationary=False,
         n_fft=2048,
         win_length=2048,
         hop_length=512,
-        freq_mask_smooth_hz=250,
-        time_mask_smooth_ms=60,
+        freq_mask_smooth_hz=300,  # Wider smooth = less spectral damage
+        time_mask_smooth_ms=80,   # Wider smooth = less temporal damage
     )
     return cleaned.astype(np.float32)
 
 
 def post_process_converted(audio, original, sr):
     """
-    ElevenLabs-inspired post-processing pipeline (v5).
+    Post-processing pipeline (v6 — Minimal, preserve clone identity).
     
-    Key design principles:
+    v6 Key insight: LESS is MORE for voice cloning quality.
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    1. SINGLE STFT pass for all spectral corrections (minimize phase errors)
-    2. Prosody-preserving F0 transfer (restore vibrato/intonation)
-    3. Micro-dynamics transfer (restore emotional expression)
-    4. Macro envelope matching (restore overall dynamics)
+    Previous versions had 5 processing stages that accumulated artifacts
+    and pulled the cloned voice back toward the original singer.
     
-    Pipeline:
-    1. Gentle denoise (noisereduce — one STFT cycle, unavoidable)
-    2. Unified spectral enhance (ONE STFT pass: denoise + formant + 
-       smooth + expression blend — replaces 4 separate passes!)
-    3. F0 prosody transfer (restore pitch contour from original)
-    4. Micro-dynamics transfer (restore fine amplitude expression)
-    5. Macro envelope matching (restore overall volume dynamics)
+    v6 Pipeline (only 3 stages):
+    1. Gentle denoise (noisereduce — very conservative)
+    2. Unified spectral enhance (single STFT pass, minimal intervention)
+    3. Macro envelope matching (volume dynamics only)
+    
+    REMOVED: F0 prosody transfer (was pulling pitch to original)
+    REMOVED: Micro-dynamics transfer (was overprocessing)
+    REDUCED: Spectral denoise, expression blend, formant correction
     """
     orig_len = min(len(audio), len(original))
     audio = audio[:orig_len]
@@ -518,23 +525,17 @@ def post_process_converted(audio, original, sr):
     print(f"[OpenVoice] Post-processing: gentle denoise...")
     audio = denoise_converted(audio, sr)
     
-    # 2) Unified spectral enhance (SINGLE STFT pass — ElevenLabs approach)
-    #    This replaces: formant_smooth + spectral_smooth + expression_blend
-    #    Result: cleaner phase, fewer artifacts, more natural
-    print(f"[OpenVoice] Post-processing: unified spectral enhance (single-pass)...")
+    # 2) Unified spectral enhance (SINGLE STFT pass — minimal intervention)
+    #    v6: Much gentler — preserve the neural network's output quality
+    print(f"[OpenVoice] Post-processing: unified spectral enhance (single-pass, gentle)...")
     audio = unified_spectral_enhance(audio, original_trimmed, sr)
     
-    # 3) F0 prosody transfer (restore vibrato/intonation)
-    print(f"[OpenVoice] Post-processing: F0 prosody transfer (vibrato/İfade)...")
-    audio = transfer_prosody_f0(audio, original_trimmed, sr)
-    
-    # 4) Micro-dynamics transfer (restore emotional amplitude patterns)
-    print(f"[OpenVoice] Post-processing: micro-dynamics (İfade koruma)...")
-    audio = transfer_micro_dynamics(audio, original_trimmed, sr)
-    
-    # 5) Macro envelope matching
-    print(f"[OpenVoice] Post-processing: envelope matching...")
-    audio = match_envelope(audio[:orig_len], original_trimmed, frame_ms=20, sr=sr)
+    # 3) Macro envelope matching ONLY (preserve overall volume dynamics)
+    #    v6: SKIP F0 prosody transfer — the neural model already handles pitch.
+    #    Pushing pitch back toward original defeats the cloning purpose.
+    #    SKIP micro-dynamics — too aggressive, makes it sound processed.
+    print(f"[OpenVoice] Post-processing: envelope matching (macro only)...")
+    audio = match_envelope(audio[:orig_len], original_trimmed, frame_ms=30, sr=sr)
     
     return audio
 
@@ -543,16 +544,21 @@ def post_process_converted(audio, original, sr):
 # SPEAKER EMBEDDING
 # ========================
 
-def extract_speaker_embedding(audio_path: str, converter=None):
+def extract_speaker_embedding(audio_path: str, converter=None, is_target=False):
     """
     Extract speaker embedding (tone color vector) from audio file.
     
-    This uses OpenVoice's reference encoder - a 2D CNN operating on
-    mel-spectrograms to produce a fixed-size speaker identity vector.
+    v6 — Enhanced for high-fidelity cloning:
+    - Pre-denoise for cleaner embedding (especially user recordings)
+    - Voice Activity Detection: only use segments with actual voice
+    - Energy-weighted averaging (louder/clearer segments contribute more)
+    - Overlapping chunks for more stable embedding
+    - Multiple extraction passes for robustness
     
     Args:
         audio_path: Path to WAV file
         converter: ToneColorConverter instance (optional, will load if None)
+        is_target: If True, apply extra care for target voice (user's voice)
     
     Returns:
         torch.Tensor: Speaker embedding vector
@@ -562,12 +568,26 @@ def extract_speaker_embedding(audio_path: str, converter=None):
     
     device = converter.device
     hps = converter.hps
+    sr = hps.data.sampling_rate
     
     # Load and preprocess audio
-    audio, sr = librosa.load(audio_path, sr=hps.data.sampling_rate)
+    audio, _ = librosa.load(audio_path, sr=sr)
     
-    # Trim silence for cleaner embedding
-    audio_trimmed, _ = librosa.effects.trim(audio, top_db=25)
+    # v6: For target voice (user recording), apply gentle noise reduction first
+    # User recordings often have room noise/hiss that degrades embedding quality
+    if is_target:
+        try:
+            audio = nr.reduce_noise(
+                y=audio, sr=sr, prop_decrease=0.4, stationary=True,
+                n_fft=2048, hop_length=512
+            ).astype(np.float32)
+            print(f"[OpenVoice] Target voice pre-denoised for cleaner embedding")
+        except Exception:
+            pass
+    
+    # Trim silence for cleaner embedding (more aggressive for target)
+    trim_db = 20 if is_target else 25
+    audio_trimmed, _ = librosa.effects.trim(audio, top_db=trim_db)
     if len(audio_trimmed) > sr * 1:  # At least 1 second after trim
         audio = audio_trimmed
     
@@ -579,26 +599,73 @@ def extract_speaker_embedding(audio_path: str, converter=None):
     if peak > 0.95:
         audio = audio / peak * 0.95
     
-    # Split into chunks for more robust embedding (average multiple segments)
-    chunk_duration = 10.0  # seconds per chunk
-    chunk_samples = int(chunk_duration * hps.data.sampling_rate)
+    # v6: Voice Activity Detection — only use segments with actual voice
+    # This prevents silent/noisy sections from diluting the embedding
+    frame_len = int(0.025 * sr)  # 25ms frames
+    hop = frame_len // 2
+    n_frames = max(1, (len(audio) - frame_len) // hop)
+    
+    frame_energies = np.array([
+        np.sqrt(np.mean(audio[i * hop:i * hop + frame_len] ** 2))
+        for i in range(n_frames)
+    ])
+    
+    # Voiced threshold: top 60% of energy frames
+    energy_threshold = np.percentile(frame_energies, 40)
+    voiced_mask = frame_energies > energy_threshold
+    
+    # Find voiced segments (contiguous regions of voiced frames)
+    voiced_segments = []
+    in_segment = False
+    seg_start = 0
+    for i in range(n_frames):
+        if voiced_mask[i] and not in_segment:
+            seg_start = i * hop
+            in_segment = True
+        elif not voiced_mask[i] and in_segment:
+            seg_end = min(i * hop + frame_len, len(audio))
+            if seg_end - seg_start > sr * 0.5:  # At least 0.5s
+                voiced_segments.append((seg_start, seg_end))
+            in_segment = False
+    if in_segment:
+        seg_end = len(audio)
+        if seg_end - seg_start > sr * 0.5:
+            voiced_segments.append((seg_start, seg_end))
+    
+    # If VAD found good segments, concatenate them; otherwise use full audio
+    if voiced_segments and sum(e - s for s, e in voiced_segments) > sr * 2:
+        voiced_audio = np.concatenate([audio[s:e] for s, e in voiced_segments])
+        print(f"[OpenVoice] VAD: {len(voiced_segments)} voiced segments, "
+              f"{len(voiced_audio)/sr:.1f}s of {len(audio)/sr:.1f}s total")
+        audio = voiced_audio
+    
+    # v6: Overlapping chunks with energy-weighted averaging
+    # Overlap ensures boundary regions contribute to multiple chunks
+    chunk_duration = 8.0  # 8 seconds per chunk (smaller = more chunks = more stable)
+    chunk_overlap = 3.0   # 3 second overlap between chunks
+    chunk_samples = int(chunk_duration * sr)
+    overlap_samples = int(chunk_overlap * sr)
+    step_samples = max(chunk_samples - overlap_samples, sr)  # Step size
     
     gs = []
-    n_chunks = max(1, len(audio) // chunk_samples)
+    weights = []
     
-    for i in range(n_chunks):
-        start = i * chunk_samples
-        end = min((i + 1) * chunk_samples, len(audio))
-        chunk = audio[start:end]
+    pos = 0
+    while pos < len(audio):
+        end = min(pos + chunk_samples, len(audio))
+        chunk = audio[pos:end]
         
-        if len(chunk) < hps.data.sampling_rate:  # Skip chunks < 1 second
-            continue
+        if len(chunk) < sr:  # Skip chunks < 1 second
+            break
+        
+        # Compute chunk energy for weighting
+        chunk_rms = np.sqrt(np.mean(chunk ** 2)) + 1e-10
         
         y = torch.FloatTensor(chunk).to(device).unsqueeze(0)
         spec = spectrogram_torch(
             y,
             hps.data.filter_length,
-            hps.data.sampling_rate,
+            sr,
             hps.data.hop_length,
             hps.data.win_length,
             center=False
@@ -607,6 +674,9 @@ def extract_speaker_embedding(audio_path: str, converter=None):
         with torch.no_grad():
             g = converter.model.ref_enc(spec.transpose(1, 2)).unsqueeze(-1)
             gs.append(g.detach())
+            weights.append(chunk_rms)  # Louder chunks = more weight
+        
+        pos += step_samples
     
     if not gs:
         # Fallback: use entire audio
@@ -614,7 +684,7 @@ def extract_speaker_embedding(audio_path: str, converter=None):
         spec = spectrogram_torch(
             y,
             hps.data.filter_length,
-            hps.data.sampling_rate,
+            sr,
             hps.data.hop_length,
             hps.data.win_length,
             center=False
@@ -622,9 +692,18 @@ def extract_speaker_embedding(audio_path: str, converter=None):
         with torch.no_grad():
             g = converter.model.ref_enc(spec.transpose(1, 2)).unsqueeze(-1)
             gs.append(g.detach())
+            weights.append(1.0)
     
-    # Average all chunk embeddings for robust speaker representation
-    se = torch.stack(gs).mean(0)
+    # v6: Energy-weighted average (louder/clearer chunks contribute more)
+    weights = np.array(weights, dtype=np.float32)
+    weights = weights / (weights.sum() + 1e-10)  # Normalize to sum=1
+    
+    se = torch.zeros_like(gs[0])
+    for g, w in zip(gs, weights):
+        se = se + g * float(w)
+    
+    print(f"[OpenVoice] Embedding extracted: {len(gs)} chunks, "
+          f"weighted avg (target={is_target})")
     return se
 
 

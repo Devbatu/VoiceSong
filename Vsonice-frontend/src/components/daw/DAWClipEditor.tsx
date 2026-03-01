@@ -570,7 +570,7 @@ const DAWClipEditor: React.FC<Props> = memo(({ clip, track, bpm, onClipUpdate, o
     const inputBuf = new Uint8Array(1024)
     const outputBuf = new Uint8Array(1024)
     const fftBuf = new Uint8Array(1024)
-    const fxBufs = new Map<string, Uint8Array>()
+    const fxBufs = new Map<string, Uint8Array<ArrayBuffer>>()
 
     const animate = () => {
       const chain = liveChainRef.current
@@ -594,8 +594,8 @@ const DAWClipEditor: React.FC<Props> = memo(({ clip, track, bpm, onClipUpdate, o
       // Per-effect levels
       const newLevels = new Map<string, number>()
       chain.fxNodes.forEach(n => {
-        let buf = fxBufs.get(n.fxId)
-        if (!buf) { buf = new Uint8Array(128); fxBufs.set(n.fxId, buf) }
+        let buf: Uint8Array<ArrayBuffer> | undefined = fxBufs.get(n.fxId)
+        if (!buf) { buf = new Uint8Array(128) as Uint8Array<ArrayBuffer>; fxBufs.set(n.fxId, buf) }
         n.analyser.getByteTimeDomainData(buf)
         let pk = 0
         for (let i = 0; i < buf.length; i++) { const v = Math.abs((buf[i] - 128) / 128); if (v > pk) pk = v }
@@ -624,7 +624,7 @@ const DAWClipEditor: React.FC<Props> = memo(({ clip, track, bpm, onClipUpdate, o
   // ============================================================
   // DRAW SPECTRUM ANALYZER
   // ============================================================
-  const drawSpectrum = useCallback((analyser: AnalyserNode, buf: Uint8Array) => {
+  const drawSpectrum = useCallback((analyser: AnalyserNode, buf: Uint8Array<ArrayBuffer>) => {
     const canvas = spectrumCanvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
