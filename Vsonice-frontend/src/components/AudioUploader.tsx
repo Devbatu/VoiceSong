@@ -62,7 +62,7 @@ export default function AudioUploader() {
 
   return (
     <div className="component-container">
-      <h2>📤 Audio Uploader</h2>
+      <h2>Audio Uploader</h2>
       <p style={{ marginBottom: '2rem', color: '#888' }}>
         Upload audio files for processing
       </p>
@@ -83,7 +83,7 @@ export default function AudioUploader() {
           style={{ display: 'none' }}
         />
         
-        <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📁</div>
+        <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>+</div>
         
         {file ? (
           <>
@@ -116,13 +116,13 @@ export default function AudioUploader() {
           disabled={uploading}
           style={{ marginTop: '1rem' }}
         >
-          {uploading ? '⏳ Uploading...' : '📤 Upload File'}
+          {uploading ? 'Uploading...' : 'Upload File'}
         </button>
       )}
 
       {result && (
         <div className="status-message success-message" style={{ marginTop: '2rem' }}>
-          <h3>✅ Upload Successful</h3>
+          <h3>Upload Successful</h3>
           <pre style={{ textAlign: 'left', overflow: 'auto' }}>
             {JSON.stringify(result, null, 2)}
           </pre>
@@ -131,7 +131,7 @@ export default function AudioUploader() {
 
       {error && (
         <div className="status-message error-message" style={{ marginTop: '2rem' }}>
-          <h3>❌ Error</h3>
+          <h3>Error</h3>
           <p>{error}</p>
         </div>
       )}

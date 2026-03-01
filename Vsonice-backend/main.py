@@ -8,10 +8,12 @@ from typing import Optional, List
 import os
 import io
 import sys
+import json
 import asyncio
 import logging
 import uvicorn
 from pathlib import Path
+from datetime import datetime
 
 # Windows ProactorEventLoop fix: suppress ConnectionResetError crashes
 if sys.platform == 'win32':
@@ -47,8 +49,10 @@ UPLOAD_DIR = Path("uploads")
 OUTPUT_DIR = Path("output")
 TEMP_DIR = Path("temp")
 SEPARATED_DIR = OUTPUT_DIR / "separated"
+VOICE_PROFILES_DIR = OUTPUT_DIR / "voice_profiles"
+CLONED_DIR = OUTPUT_DIR / "cloned"
 
-for directory in [UPLOAD_DIR, OUTPUT_DIR, TEMP_DIR, SEPARATED_DIR]:
+for directory in [UPLOAD_DIR, OUTPUT_DIR, TEMP_DIR, SEPARATED_DIR, VOICE_PROFILES_DIR, CLONED_DIR]:
     directory.mkdir(exist_ok=True, parents=True)
 
 
@@ -871,13 +875,358 @@ async def generate_text_to_song(request: TextToSongRequest):
 
 
 # ========================
+# YOUTUBE AUDIO EXTRACTION
+# ========================
+
+@app.post("/api/youtube/extract-audio")
+async def extract_audio_from_youtube(url: str = Form(...)):
+    """Download audio from a YouTube URL and return it as a file"""
+    import re
+    import asyncio
+    
+    # Validate YouTube URL
+    yt_pattern = r'(https?://)?(www\.)?(youtube\.com/(watch\?v=|shorts/)|youtu\.be/|music\.youtube\.com/watch\?v=)[a-zA-Z0-9_-]+'
+    if not re.match(yt_pattern, url.strip()):
+        raise HTTPException(status_code=400, detail="Geçersiz YouTube URL'si. Lütfen geçerli bir YouTube linki girin.")
+    
+    # Clean URL — strip playlist/radio params (prevents yt-dlp from downloading entire playlist)
+    clean_url = url.strip().split('&list=')[0].split('&start_radio=')[0]
+    
+    output_dir = TEMP_DIR / "youtube"
+    output_dir.mkdir(exist_ok=True, parents=True)
+    
+    # Clean old files (older than 1 hour)
+    import time
+    now = time.time()
+    for f in output_dir.iterdir():
+        if f.is_file() and (now - f.stat().st_mtime) > 3600:
+            try:
+                f.unlink(missing_ok=True)
+            except:
+                pass
+    
+    # Use unique ID instead of timestamp (avoids race condition)
+    unique_id = f"yt_{int(now * 1000)}"
+    output_template = str(output_dir / unique_id)
+    
+    def _download_sync():
+        """Run yt-dlp in a thread to avoid blocking the event loop"""
+        import yt_dlp
+        
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': output_template + '.%(ext)s',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'wav',
+                'preferredquality': '192',
+            }],
+            'noplaylist': True,
+            'quiet': True,
+            'no_warnings': True,
+            'socket_timeout': 30,
+            'retries': 3,
+            'extract_flat': False,
+            # Limit duration to 15 minutes
+            'match_filter': yt_dlp.utils.match_filter_func("duration < 900"),
+        }
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(clean_url, download=True)
+            return info
+    
+    try:
+        print(f"[YOUTUBE] Downloading audio from: {clean_url}")
+        
+        # Run blocking yt-dlp in thread pool (non-blocking for FastAPI)
+        loop = asyncio.get_event_loop()
+        info = await loop.run_in_executor(None, _download_sync)
+        
+        title = info.get('title', 'youtube_audio')
+        duration = info.get('duration', 0)
+        
+        # Find the output file using the unique_id prefix (no timestamp race)
+        output_file = Path(output_template + '.wav')
+        if not output_file.exists():
+            # Search for any file with our unique ID prefix
+            for f in output_dir.glob(f"{unique_id}*"):
+                if f.suffix in ['.wav', '.mp3', '.m4a', '.webm', '.ogg']:
+                    output_file = f
+                    break
+        
+        if not output_file.exists():
+            raise HTTPException(status_code=500, detail="Ses dosyası indirilemedi. Lütfen farklı bir URL deneyin.")
+        
+        file_size_mb = output_file.stat().st_size / (1024 * 1024)
+        print(f"[YOUTUBE] Downloaded: {title} ({duration}s, {file_size_mb:.1f}MB)")
+        
+        # Clean the title for filename use (keep unicode for display)
+        safe_title = re.sub(r'[^\w\s\-]', '', title)[:80].strip()
+        # ASCII-safe version for HTTP headers (latin-1 compatible)
+        from urllib.parse import quote
+        ascii_title = safe_title.encode('ascii', 'ignore').decode('ascii').strip() or 'youtube_audio'
+        header_title = quote(safe_title, safe=' ')
+        
+        return FileResponse(
+            path=str(output_file),
+            media_type="audio/wav",
+            filename=f"{ascii_title}.wav",
+            headers={
+                "X-Audio-Title": header_title,
+                "X-Audio-Duration": str(duration),
+                "Access-Control-Expose-Headers": "X-Audio-Title, X-Audio-Duration",
+                "Content-Disposition": f"attachment; filename=\"{ascii_title}.wav\"; filename*=UTF-8''{quote(safe_title)}.wav"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_msg = str(e)
+        print(f"[YOUTUBE] Error: {error_msg}")
+        if "Video unavailable" in error_msg or "Private video" in error_msg:
+            raise HTTPException(status_code=400, detail="Bu video kullanılamıyor (gizli veya kaldırılmış olabilir).")
+        if "duration" in error_msg.lower():
+            raise HTTPException(status_code=400, detail="Video çok uzun. Maksimum 15 dakika desteklenir.")
+        if "Sign in" in error_msg:
+            raise HTTPException(status_code=400, detail="Bu video yaş doğrulaması gerektiriyor, indirilemez.")
+        raise HTTPException(status_code=500, detail=f"YouTube indirme hatası: {error_msg}")
+
+
+# ========================
+# VOICE PROFILES (Kişisel Ses Paketi)
+# ========================
+
+
+@app.post("/api/voice-profiles")
+async def save_voice_profile(
+    voice_file: UploadFile = File(...),
+    name: str = Form("Ses Profilim"),
+):
+    """Save a voice recording as a reusable voice profile"""
+    try:
+        profile_id = f"vp_{int(datetime.now().timestamp() * 1000)}"
+        profile_dir = VOICE_PROFILES_DIR / profile_id
+        profile_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save audio file
+        audio_path = profile_dir / f"voice.wav"
+        raw_path = profile_dir / f"voice_raw{Path(voice_file.filename).suffix}"
+
+        with open(raw_path, "wb") as f:
+            content = await voice_file.read()
+            f.write(content)
+
+        # Convert to WAV
+        converted = convert_audio_to_wav(raw_path)
+        if converted != audio_path:
+            import shutil
+            shutil.copy2(str(converted), str(audio_path))
+
+        # Get audio info
+        import soundfile as sf_info
+        info = sf_info.info(str(audio_path))
+        duration = info.duration
+
+        # Extract and save speaker embedding for fast reuse
+        try:
+            from services.openvoice_service import get_or_load_converter, extract_speaker_embedding
+            import numpy as np
+            converter = get_or_load_converter()
+            se = extract_speaker_embedding(str(audio_path), converter)
+            np.save(str(profile_dir / "speaker_embedding.npy"), se.cpu().numpy())
+            has_embedding = True
+            print(f"[INFO] ✅ Speaker embedding cached for profile '{name}'")
+        except Exception as e:
+            has_embedding = False
+            print(f"[WARNING] Speaker embedding extraction failed: {e}")
+
+        # Save metadata
+        metadata = {
+            "id": profile_id,
+            "name": name,
+            "created_at": datetime.now().isoformat(),
+            "duration": round(duration, 1),
+            "has_embedding": has_embedding,
+            "original_filename": voice_file.filename,
+        }
+
+        with open(profile_dir / "metadata.json", "w", encoding="utf-8") as f:
+            json.dump(metadata, f, ensure_ascii=False, indent=2)
+
+        print(f"[SUCCESS] ✅ Voice profile saved: {name} ({duration:.1f}s)")
+
+        return {
+            "message": f"Ses profili kaydedildi: {name}",
+            "profile": metadata,
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Profil kaydetme hatası: {str(e)}")
+
+
+@app.get("/api/voice-profiles")
+async def list_voice_profiles():
+    """List all saved voice profiles"""
+    profiles = []
+
+    if not VOICE_PROFILES_DIR.exists():
+        return {"profiles": []}
+
+    for profile_dir in sorted(VOICE_PROFILES_DIR.iterdir(), key=os.path.getmtime, reverse=True):
+        if not profile_dir.is_dir():
+            continue
+        meta_path = profile_dir / "metadata.json"
+        if meta_path.exists():
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+                # Check if audio file still exists
+                audio_path = profile_dir / "voice.wav"
+                meta["audio_exists"] = audio_path.exists()
+                meta["audio_url"] = f"/api/voice-profiles/{meta['id']}/audio"
+                profiles.append(meta)
+            except Exception:
+                continue
+
+    return {"profiles": profiles}
+
+
+@app.get("/api/voice-profiles/{profile_id}/audio")
+async def get_voice_profile_audio(profile_id: str, request: Request):
+    """Stream voice profile audio with Range support"""
+    profile_dir = VOICE_PROFILES_DIR / profile_id
+    audio_path = profile_dir / "voice.wav"
+
+    if not audio_path.exists():
+        raise HTTPException(status_code=404, detail="Ses profili bulunamadı")
+
+    file_size = audio_path.stat().st_size
+    range_header = request.headers.get("range")
+
+    if range_header:
+        range_str = range_header.replace("bytes=", "")
+        parts = range_str.split("-")
+        start = int(parts[0]) if parts[0] else 0
+        end = int(parts[1]) if parts[1] else file_size - 1
+        end = min(end, file_size - 1)
+        content_length = end - start + 1
+
+        def iter_file():
+            with open(audio_path, "rb") as f:
+                f.seek(start)
+                remaining = content_length
+                while remaining > 0:
+                    chunk = f.read(min(65536, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
+
+        return StreamingResponse(
+            iter_file(), status_code=206, media_type="audio/wav",
+            headers={
+                "Content-Range": f"bytes {start}-{end}/{file_size}",
+                "Accept-Ranges": "bytes", "Content-Length": str(content_length),
+            },
+        )
+    else:
+        return FileResponse(path=str(audio_path), media_type="audio/wav",
+                            headers={"Accept-Ranges": "bytes", "Content-Length": str(file_size)})
+
+
+@app.delete("/api/voice-profiles/{profile_id}")
+async def delete_voice_profile(profile_id: str):
+    """Delete a voice profile"""
+    import shutil
+    profile_dir = VOICE_PROFILES_DIR / profile_id
+    if not profile_dir.exists():
+        raise HTTPException(status_code=404, detail="Profil bulunamadı")
+
+    shutil.rmtree(str(profile_dir), ignore_errors=True)
+    return {"message": "Profil silindi", "id": profile_id}
+
+
+# ========================
+# CLONED RESULTS HISTORY
+# ========================
+
+@app.get("/api/clone-history")
+async def list_clone_history():
+    """List all cloned song results"""
+    results = []
+
+    if not CLONED_DIR.exists():
+        return {"results": []}
+
+    # Find all main mix files (not _vocals or _instrumental)
+    for wav_file in sorted(CLONED_DIR.glob("*.wav"), key=os.path.getmtime, reverse=True):
+        fname = wav_file.stem
+        if fname.endswith("_vocals") or fname.endswith("_instrumental"):
+            continue
+
+        size_mb = wav_file.stat().st_size / (1024 * 1024)
+        import soundfile as sf_info2
+        try:
+            info = sf_info2.info(str(wav_file))
+            duration = info.duration
+        except Exception:
+            duration = 0
+
+        created = datetime.fromtimestamp(wav_file.stat().st_mtime)
+
+        result = {
+            "id": fname,
+            "name": fname.replace("cloned_", "").replace("_", " "),
+            "filename": wav_file.name,
+            "created_at": created.isoformat(),
+            "duration": round(duration, 1),
+            "size_mb": round(size_mb, 1),
+            "download_url": f"/api/download/cloned/{wav_file.name}",
+            "components": {},
+        }
+
+        # Check for vocal/instrumental components
+        vocal_path = CLONED_DIR / f"{fname}_vocals.wav"
+        instr_path = CLONED_DIR / f"{fname}_instrumental.wav"
+        if vocal_path.exists():
+            result["components"]["vocals"] = f"/api/download/cloned/{vocal_path.name}"
+        if instr_path.exists():
+            result["components"]["instrumental"] = f"/api/download/cloned/{instr_path.name}"
+
+        results.append(result)
+
+    return {"results": results}
+
+
+@app.delete("/api/clone-history/{result_id}")
+async def delete_clone_result(result_id: str):
+    """Delete a cloned result and its components"""
+    deleted = []
+    for suffix in ["", "_vocals", "_instrumental"]:
+        fpath = CLONED_DIR / f"{result_id}{suffix}.wav"
+        if fpath.exists():
+            fpath.unlink()
+            deleted.append(fpath.name)
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Sonuç bulunamadı")
+
+    return {"message": "Sonuç silindi", "deleted": deleted}
+
+
+# ========================
 # VOICE CLONING WITH DEMUCS AI
 # ========================
 
 @app.post("/api/clone-voice-sing")
 async def clone_voice_and_sing(
-    voice_file: UploadFile = File(...),
-    song_file: UploadFile = File(...)
+    song_file: UploadFile = File(...),
+    voice_file: UploadFile = File(None),
+    voice_profile_id: str = Form(None),
+    voice_model_id: str = Form(None),
 ):
     """
     Ses Dönüştürme — OpenVoice V2 Neural Voice Conversion
@@ -891,6 +1240,9 @@ async def clone_voice_and_sing(
        → Normalizing Flow (inverse) → hedef ses kimliğini ekle
        → HiFi-GAN Decoder → temiz yüksek kaliteli ses
     4. Dönüştürülmüş vokal + enstrümantal = final mix
+    
+    voice_file, voice_profile_id veya voice_model_id ile çalışır.
+    voice_model_id: Eğitilmiş AI model ile klonlama (en yüksek kalite).
     """
     import librosa
     import soundfile as sf
@@ -899,23 +1251,97 @@ async def clone_voice_and_sing(
     SR = 44100
     MAX_DURATION = 300
 
-    try:
-        print(f"\n{'='*60}")
-        print(f"[INFO] 🎤 Ses dönüştürme başladı (Voice Conversion)...")
-        print(f"[INFO] Ses kimliği kaynağı: {voice_file.filename}")
-        print(f"[INFO] Şarkı (içerik kaynağı): {song_file.filename}")
-        print(f"{'='*60}")
+    # Validate: either voice_file, voice_profile_id, or voice_model_id required
+    if voice_file is None and voice_profile_id is None and voice_model_id is None:
+        raise HTTPException(status_code=400, detail="voice_file, voice_profile_id veya voice_model_id gerekli")
 
-        # === Dosyaları kaydet ===
-        voice_path = UPLOAD_DIR / f"voice_{voice_file.filename}"
+    # Pre-loaded speaker embedding from saved profile
+    cached_target_se = None
+
+    try:
+        # Determine voice source (priority: trained model > profile > file)
+        if voice_model_id:
+            # Use trained AI model embedding (highest quality)
+            from services.voice_model_trainer import get_trainer
+            import torch
+            
+            trainer = get_trainer()
+            cached_target_se = trainer.get_model_embedding(voice_model_id)
+            
+            # Get model metadata for display
+            model_meta = trainer._load_metadata(voice_model_id)
+            voice_source_name = model_meta.get("name", voice_model_id) if model_meta else voice_model_id
+            quality_grade = model_meta.get("quality_grade", "?") if model_meta else "?"
+            
+            # We need a voice_path for the pipeline but trained model doesn't have a single file
+            # Use the first sample as reference (for any fallback operations)
+            model_dir = trainer._model_dir(voice_model_id)
+            samples_dir = model_dir / "samples"
+            sample_files = list(samples_dir.glob("*.wav")) if samples_dir.exists() else []
+            if sample_files:
+                voice_path = sample_files[0]
+            else:
+                # Fallback: create a dummy path (embedding is already loaded)
+                voice_path = None
+            
+            print(f"\n{'='*60}")
+            print(f"[INFO] 🎤 Ses dönüştürme başladı (Voice Conversion)...")
+            print(f"[INFO] 🎓 Eğitilmiş AI Model: {voice_source_name} (Kalite: {quality_grade})")
+            print(f"[INFO] Şarkı (içerik kaynağı): {song_file.filename}")
+            print(f"{'='*60}")
+        elif voice_profile_id:
+            # Load from saved voice profile
+            profile_dir = VOICE_PROFILES_DIR / voice_profile_id
+            profile_audio = profile_dir / "voice.wav"
+            if not profile_audio.exists():
+                raise HTTPException(status_code=404, detail=f"Ses profili bulunamadı: {voice_profile_id}")
+            
+            voice_path = profile_audio
+            voice_source_name = voice_profile_id
+            
+            # Try to load cached speaker embedding
+            embedding_path = profile_dir / "speaker_embedding.npy"
+            if embedding_path.exists():
+                try:
+                    import torch
+                    cached_target_se = torch.from_numpy(np.load(str(embedding_path)))
+                    if torch.cuda.is_available():
+                        cached_target_se = cached_target_se.cuda()
+                    print(f"[INFO] ⚡ Cached speaker embedding loaded from profile")
+                except Exception as e:
+                    print(f"[WARNING] Could not load cached embedding: {e}")
+                    cached_target_se = None
+            
+            # Load profile name
+            meta_path = profile_dir / "metadata.json"
+            if meta_path.exists():
+                with open(meta_path, "r", encoding="utf-8") as mf:
+                    meta = json.load(mf)
+                voice_source_name = meta.get("name", voice_profile_id)
+            
+            print(f"\n{'='*60}")
+            print(f"[INFO] 🎤 Ses dönüştürme başladı (Voice Conversion)...")
+            print(f"[INFO] Ses kimliği kaynağı: {voice_source_name} (kayıtlı profil)")
+            print(f"[INFO] Şarkı (içerik kaynağı): {song_file.filename}")
+            print(f"{'='*60}")
+        else:
+            # Use uploaded voice file
+            voice_path = UPLOAD_DIR / f"voice_{voice_file.filename}"
+            with open(voice_path, "wb") as f:
+                f.write(await voice_file.read())
+            voice_path = convert_audio_to_wav(voice_path)
+            voice_source_name = voice_file.filename
+            
+            print(f"\n{'='*60}")
+            print(f"[INFO] 🎤 Ses dönüştürme başladı (Voice Conversion)...")
+            print(f"[INFO] Ses kimliği kaynağı: {voice_file.filename}")
+            print(f"[INFO] Şarkı (içerik kaynağı): {song_file.filename}")
+            print(f"{'='*60}")
+
+        # === Şarkı dosyasını kaydet ===
         song_path = UPLOAD_DIR / f"song_{song_file.filename}"
-        
-        with open(voice_path, "wb") as f:
-            f.write(await voice_file.read())
         with open(song_path, "wb") as f:
             f.write(await song_file.read())
-
-        voice_path = convert_audio_to_wav(voice_path)
         song_path = convert_audio_to_wav(song_path)
 
         # Süre kontrolü
@@ -989,8 +1415,15 @@ async def clone_voice_and_sing(
         converter = get_or_load_converter()
         
         # Extract speaker embeddings (tone color vectors)
-        print(f"[INFO] 🎤 Kullanıcı ses kimliği çıkarılıyor (Speaker Embedding)...")
-        target_se = extract_speaker_embedding(str(voice_path), converter)
+        if cached_target_se is not None:
+            if voice_model_id:
+                print(f"[INFO] ⚡ Eğitilmiş AI model embedding'i kullanılıyor (en yüksek kalite)")
+            else:
+                print(f"[INFO] ⚡ Kayıtlı profil embedding'i kullanılıyor (hızlı mod)")
+            target_se = cached_target_se
+        else:
+            print(f"[INFO] 🎤 Kullanıcı ses kimliği çıkarılıyor (Speaker Embedding)...")
+            target_se = extract_speaker_embedding(str(voice_path), converter)
         
         print(f"[INFO] 🎵 Orijinal şarkıcı ses kimliği çıkarılıyor...")
         source_se = extract_speaker_embedding(str(vocals_path), converter)
@@ -1007,13 +1440,16 @@ async def clone_voice_and_sing(
         converted_vocal_path = str(TEMP_DIR / "converted_vocal.wav")
         
         # Convert voice using deep neural network
-        # tau=0.2 → strong but natural conversion (0=max change, 1=no change)
+        # tau=0.3 → ElevenLabs-style balanced conversion
+        #   - Low enough to transform voice identity
+        #   - High enough to preserve prosody, expression, and natural quality
+        #   - ElevenLabs uses similar range for their tone-color transfer
         y_converted, conv_sr = convert_voice_chunked(
             source_audio_path=str(vocals_path),
             source_se=source_se,
             target_se=target_se,
             output_path=converted_vocal_path,
-            tau=0.2,
+            tau=0.3,
             converter=converter
         )
         
@@ -1030,11 +1466,14 @@ async def clone_voice_and_sing(
         print(f"[INFO] Çıkış: {len(y_converted)/SR:.1f}s")
 
         # ============================================================
-        # STEP 4: Profesyonel Mastering Pipeline (v3 — Maximum Quality)
+        # STEP 4: ElevenLabs-Quality Mastering Pipeline (v5)
         # ============================================================
-        print(f"\n[STEP 4/4] 🎛️ Profesyonel mastering pipeline (v3 - Max Quality)...")
+        # Key insight from ElevenLabs: Minimal, surgical processing.
+        # Each step should PRESERVE the natural quality, not add effects.
+        # Less processing = more natural sound.
+        print(f"\n[STEP 4/4] 🎛️ ElevenLabs-Quality Mastering Pipeline (v5)...")
         
-        from scipy.signal import butter, sosfiltfilt, fftconvolve
+        from scipy.signal import butter, sosfiltfilt
         from scipy.ndimage import uniform_filter1d as uf1d, minimum_filter1d as mf1d
         
         # --- Helper: LUFS Loudness Normalization ---
@@ -1048,55 +1487,50 @@ async def clone_voice_and_sing(
             gain = min(gain, 6.0)
             return (signal * gain).astype(np.float32)
         
-        # ====== VOKAL İŞLEME ZİNCİRİ ======
-        print(f"[INFO] 🔧 Vokal işleme zinciri başlıyor...")
+        # ====== VOKAL İŞLEME ZİNCİRİ (ElevenLabs-style: minimal, surgical) ======
+        print(f"[INFO] 🔧 Vokal mastering zinciri (ElevenLabs-quality)...")
         
-        # 1) High-pass: Rumble ve uğultu temizle (<80Hz)
-        sos_hp = butter(4, 80, btype='high', fs=SR, output='sos')
+        # 1) High-pass: Sadece alçak uğultuyu temizle
+        sos_hp = butter(3, 75, btype='high', fs=SR, output='sos')
         y_converted = sosfiltfilt(sos_hp, y_converted).astype(np.float32)
-        print(f"[INFO] ✅ High-pass filter (80Hz)")
+        print(f"[INFO] ✅ High-pass filter (75Hz, gentle)")
         
-        # 2) Warmth EQ: Add body/warmth (200-400Hz) — prevents thin/tinny sound
-        sos_warm = butter(2, [200, 400], btype='band', fs=SR, output='sos')
+        # 2) Body/Warmth EQ: Hafif sıcaklık ekle (vokal zayıflamasını önle)
+        sos_warm = butter(2, [180, 350], btype='band', fs=SR, output='sos')
         y_warmth = sosfiltfilt(sos_warm, y_converted).astype(np.float32)
-        y_converted = y_converted + y_warmth * 0.15  # ~+1.2dB warmth
-        print(f"[INFO] ✅ Warmth EQ (200-400Hz, +1.2dB)")
+        y_converted = y_converted + y_warmth * 0.12  # Subtle warmth
+        print(f"[INFO] ✅ Warmth EQ (180-350Hz, +1dB)")
         
-        # 3) Dynamic de-esser
+        # 3) Dynamic de-esser (sadece gerçek sibilance'ı hedefle)
         sos_sib = butter(2, 6000, btype='high', fs=SR, output='sos')
         y_sibilant = sosfiltfilt(sos_sib, y_converted).astype(np.float32)
         sib_env = np.abs(y_sibilant)
         sib_env = uf1d(sib_env, size=max(int(0.005 * SR), 1))
-        sib_threshold = np.percentile(sib_env, 85)
+        sib_threshold = np.percentile(sib_env, 88)  # Only top 12% (true sibilance)
         sib_mask = np.clip(sib_env / (sib_threshold + 1e-10), 0, 1)
-        y_converted = y_converted - y_sibilant * sib_mask * 0.3
-        print(f"[INFO] ✅ Dynamic de-esser (6kHz+)")
+        y_converted = y_converted - y_sibilant * sib_mask * 0.25  # Gentle
+        print(f"[INFO] ✅ Dynamic de-esser (6kHz+, gentle)")
         
-        # 4) Presence + Air EQ: Vokal netliği ve hava hissi
-        sos_pres = butter(2, [2000, 5500], btype='band', fs=SR, output='sos')
+        # 4) Presence EQ: Vokal netliği (çok hafif)
+        sos_pres = butter(2, [2500, 5000], btype='band', fs=SR, output='sos')
         y_presence = sosfiltfilt(sos_pres, y_converted).astype(np.float32)
-        y_converted = y_converted + y_presence * 0.18
+        y_converted = y_converted + y_presence * 0.12  # Subtle presence
         
         nyq_safe = min(13000, SR // 2 - 100)
         if nyq_safe > 9000:
             sos_air = butter(2, [9000, nyq_safe], btype='band', fs=SR, output='sos')
             y_air = sosfiltfilt(sos_air, y_converted).astype(np.float32)
-            y_converted = y_converted + y_air * 0.10
-        print(f"[INFO] ✅ Presence + Air EQ")
+            y_converted = y_converted + y_air * 0.06  # Very subtle air
+        print(f"[INFO] ✅ Presence + Air EQ (subtle)")
         
-        # 5) Soft harmonic saturation — adds warmth and "analog" character
-        def soft_saturate(signal, drive=0.3):
-            """Soft-clip saturation: adds subtle harmonics like analog gear"""
-            x = signal * (1.0 + drive)
-            return np.tanh(x).astype(np.float32) * (1.0 / np.tanh(1.0 + drive))
+        # 5) SKIP saturation — ElevenLabs doesn't add harmonics artificially
+        #    Neural vocoder (HiFi-GAN) already produces natural harmonics
+        print(f"[INFO] ✅ No saturation (ElevenLabs approach: preserve natural harmonics)")
         
-        y_converted = soft_saturate(y_converted, drive=0.2)
-        print(f"[INFO] ✅ Harmonic saturation (subtle analog warmth)")
-        
-        # 6) Block-based compressor (vectorized)
-        threshold_comp = 10 ** (-20.0 / 20)
-        ratio_comp = 2.5
-        block_size = max(int(SR * 0.01), 1)
+        # 6) Gentle compressor (preserve dynamics, just control peaks)
+        threshold_comp = 10 ** (-16.0 / 20)  # -16dB (very gentle)
+        ratio_comp = 1.8  # Soft ratio
+        block_size = max(int(SR * 0.02), 1)  # 20ms blocks
         n_blocks = len(y_converted) // block_size + 1
         gain_curve = np.ones(len(y_converted), dtype=np.float32)
         
@@ -1111,44 +1545,46 @@ async def clone_voice_and_sing(
                 red_db = over_db * (1.0 - 1.0 / ratio_comp)
                 gain_curve[bs:be] = 10 ** (-red_db / 20)
         
-        smooth_n = max(int(SR * 0.015), 3)
+        smooth_n = max(int(SR * 0.02), 3)
         gain_curve = uf1d(gain_curve, size=smooth_n)
         y_converted = (y_converted * gain_curve).astype(np.float32)
-        print(f"[INFO] ✅ Compressor (threshold=-20dB, ratio=2.5:1)")
+        print(f"[INFO] ✅ Gentle compressor (threshold=-16dB, ratio=1.8:1)")
         
-        # 7) Reverb transfer — extract reverb from original vocal, apply to converted
-        #    This makes the converted vocal sit naturally in the mix
+        # 7) Spectral environment matching — make converted vocal sit
+        #    in the same acoustic space as the original
         try:
-            # Estimate reverb tail from original vocal
-            # Use correlation between original and its delayed version
             orig_mono = y_original_vocal[:min(len(y_original_vocal), len(y_converted))]
             conv_len = min(len(y_converted), len(orig_mono))
             
-            # Simple reverb estimation: spectral difference between original and dry
+            # Compare spectral envelopes at low resolution (captures room/mic character)
             S_orig = librosa.stft(orig_mono[:conv_len], n_fft=2048, hop_length=512)
             S_conv = librosa.stft(y_converted[:conv_len], n_fft=2048, hop_length=512)
             
-            # Compute spectral envelope ratio (captures room response)
             mag_orig = np.abs(S_orig) + 1e-8
             mag_conv = np.abs(S_conv) + 1e-8
+            phase_conv = np.angle(S_conv)
             
-            # Smooth spectral envelope matching
+            # Smooth spectral envelopes heavily (captures tonal balance, not detail)
             from scipy.ndimage import median_filter
-            env_ratio = median_filter(mag_orig / mag_conv, size=(11, 5))
-            env_ratio = np.clip(env_ratio, 0.5, 2.0)  # Gentle matching
+            env_orig = median_filter(mag_orig, size=(15, 7))
+            env_conv = median_filter(mag_conv, size=(15, 7))
             
-            # Apply 30% of spectral matching (subtle, preserves converted character)
-            S_matched = S_conv * (1.0 + 0.3 * (env_ratio - 1.0))
-            y_converted_matched = librosa.istft(S_matched, hop_length=512, length=conv_len)
-            y_converted[:conv_len] = y_converted_matched.astype(np.float32)
+            # Compute and apply gentle spectral matching
+            env_ratio = np.clip(env_orig / env_conv, 0.6, 1.7)
             
-            print(f"[INFO] ✅ Spectral reverb matching (original vocal → converted)")
+            # Apply only 25% of the matching (subtle tonal balance correction)
+            mag_matched = mag_conv * (1.0 + 0.25 * (env_ratio - 1.0))
+            S_matched = mag_matched * np.exp(1j * phase_conv)
+            y_matched = librosa.istft(S_matched, hop_length=512, length=conv_len)
+            y_converted[:conv_len] = y_matched.astype(np.float32)
+            
+            print(f"[INFO] ✅ Spectral environment matching (acoustic space transfer)")
         except Exception as e:
-            print(f"[INFO] ⚠️ Reverb matching skipped: {e}")
+            print(f"[INFO] ⚠️ Environment matching skipped: {e}")
         
         # 8) Loudness normalize
-        y_converted = loudness_normalize(y_converted, target_lufs=-11.0, sr=SR)
-        print(f"[INFO] ✅ Loudness normalization (target=-11 LUFS)")
+        y_converted = loudness_normalize(y_converted, target_lufs=-12.0, sr=SR)
+        print(f"[INFO] ✅ Loudness normalization (target=-12 LUFS)")
         
         # Peak limit vocal
         vpeak = np.abs(y_converted).max()
@@ -1157,10 +1593,10 @@ async def clone_voice_and_sing(
         
         # ====== ENSTRÜMANTAL İŞLEME ======
         for ch in range(y_instr_stereo.shape[0]):
-            y_instr_stereo[ch] = loudness_normalize(y_instr_stereo[ch], target_lufs=-16.0, sr=SR)
-        print(f"[INFO] ✅ Enstrümantal normalize (-16 LUFS)")
+            y_instr_stereo[ch] = loudness_normalize(y_instr_stereo[ch], target_lufs=-15.0, sr=SR)
+        print(f"[INFO] ✅ Enstrümantal normalize (-15 LUFS)")
         
-        # ====== MİKSAJ ======
+        # ====== MİKSAJ (ElevenLabs-quality balance) ======
         target_len = y_instr_stereo.shape[-1]
         if len(y_converted) < target_len:
             y_converted = np.pad(y_converted, (0, target_len - len(y_converted)))
@@ -1175,21 +1611,35 @@ async def clone_voice_and_sing(
         rms_i = float(np.sqrt(np.mean(y_instr_stereo**2))) + 1e-8
         print(f"[INFO] Vokal RMS: {rms_v:.4f}, Enstrümantal RMS: {rms_i:.4f}, Oran: {rms_v/rms_i:.2f}")
         
-        # Stereo mix — vokal ortada, enstrümantal stereo
-        vocal_gain = 1.0
-        instr_gain = 0.70
+        # Auto-balance: Ensure vocal sits 2-4dB above instrumental
+        target_ratio = 1.5  # Vocal ~3.5dB louder than instrumental
+        current_ratio = rms_v / rms_i
+        if current_ratio < target_ratio * 0.8:
+            # Vocal too quiet — boost vocal slightly
+            vocal_gain = min(target_ratio / current_ratio, 1.5)
+            instr_gain = 0.72
+        elif current_ratio > target_ratio * 1.5:
+            # Vocal too loud — reduce vocal slightly
+            vocal_gain = target_ratio / current_ratio
+            instr_gain = 0.75
+        else:
+            vocal_gain = 1.0
+            instr_gain = 0.72
         
+        print(f"[INFO] Mix balance: vocal_gain={vocal_gain:.2f}, instr_gain={instr_gain:.2f}")
+        
+        # Stereo mix — vokal ortada, enstrümantal stereo
         y_mixed = np.zeros((2, min_len), dtype=np.float32)
         y_mixed[0] = y_converted * vocal_gain + y_instr_stereo[0] * instr_gain
         y_mixed[1] = y_converted * vocal_gain + y_instr_stereo[1] * instr_gain
         
-        # ====== MASTER LİMİTER (Vectorized) ======
-        ceiling = 10 ** (-0.3 / 20)
+        # ====== MASTER LİMİTER (True Peak, broadcast quality) ======
+        ceiling = 10 ** (-1.0 / 20)  # -1dB True Peak (broadcast standard)
         peak_env = np.max(np.abs(y_mixed), axis=0)
         limiter_gain = np.where(peak_env > ceiling, ceiling / (peak_env + 1e-10), 1.0).astype(np.float32)
-        la_samples = max(int(SR * 0.005), 1)
+        la_samples = max(int(SR * 0.003), 1)  # 3ms lookahead
         limiter_gain = mf1d(limiter_gain, size=la_samples)
-        rel_samples = max(int(SR * 0.05), 1)
+        rel_samples = max(int(SR * 0.08), 1)  # 80ms release (smooth)
         limiter_gain = uf1d(limiter_gain, size=rel_samples)
         limiter_gain = np.minimum(limiter_gain, 1.0)
         y_mixed = y_mixed * limiter_gain[np.newaxis, :]
@@ -1226,12 +1676,13 @@ async def clone_voice_and_sing(
 
         return {
             "message": "OpenVoice V2 Neural Voice Conversion tamamlandı!",
-            "voice_file": voice_file.filename,
+            "voice_file": voice_file.filename if voice_file else (voice_model_id or voice_profile_id or "saved_profile"),
             "song_file": song_file.filename,
-            "method": "OpenVoice V2 (Speaker Embedding + Normalizing Flow + HiFi-GAN)",
+            "method": "OpenVoice V2 (Speaker Embedding + Normalizing Flow + HiFi-GAN)" + (" + AI Trained Model" if voice_model_id else ""),
             "status": "completed",
             "output_file": str(out_path),
             "download_url": f"/api/download/cloned/{output_name}.wav",
+            "voice_model_id": voice_model_id,
             "components": {
                 "vocals": f"/api/download/cloned/{output_name}_vocals.wav",
                 "instrumental": f"/api/download/cloned/{output_name}_instrumental.wav"
@@ -1246,6 +1697,615 @@ async def clone_voice_and_sing(
 # ========================
 # STUDIO ENDPOINTS
 # ========================
+
+
+@app.post("/api/studio/separate-stems")
+async def studio_separate_stems(
+    audio_file: UploadFile = File(...),
+    model: str = Form("htdemucs"),
+):
+    """
+    Separate an audio file into stems and return download URLs for each stem.
+    Used by the Studio for loading stems as individual tracks.
+    """
+    import soundfile as sf
+    
+    try:
+        print(f"\n[Studio] 🎛️ Stem separation requested: {audio_file.filename}")
+        
+        # Save uploaded file
+        safe_name = audio_file.filename.replace(" ", "_").replace("(", "").replace(")", "")
+        input_path = UPLOAD_DIR / f"studio_{safe_name}"
+        with open(input_path, "wb") as f:
+            f.write(await audio_file.read())
+        
+        input_path = convert_audio_to_wav(input_path)
+        
+        # Create output directory
+        stem_name = Path(safe_name).stem
+        output_dir = OUTPUT_DIR / "separated" / f"studio_{stem_name}"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Run Demucs separation
+        from demucs_ai import demucs_separate_stems
+        result = demucs_separate_stems(input_path, model, output_dir)
+        
+        # Build response with download URLs for each stem
+        stems = []
+        for stem in result["stems"]:
+            stem_file = output_dir / f"{stem}.wav"
+            if stem_file.exists():
+                info = sf.info(str(stem_file))
+                size_mb = stem_file.stat().st_size / (1024 * 1024)
+                
+                # Determine track type
+                type_map = {
+                    'vocals': 'vocal',
+                    'drums': 'drums',
+                    'bass': 'bass',
+                    'other': 'instrumental',
+                    'music': 'instrumental',
+                }
+                track_type = type_map.get(stem, 'other')
+                
+                stems.append({
+                    "name": stem,
+                    "type": track_type,
+                    "duration": round(info.duration, 2),
+                    "size_mb": round(size_mb, 2),
+                    "download_url": f"/api/studio/stem-file/{stem_name}/{stem}",
+                })
+        
+        print(f"[Studio] ✅ Separation complete: {len(stems)} stems")
+        
+        return {
+            "message": f"{len(stems)} stem başarıyla ayrıldı",
+            "stems": stems,
+            "sample_rate": result["sample_rate"],
+            "device": result["device"],
+        }
+    
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Stem ayrıştırma hatası: {str(e)}")
+
+
+@app.get("/api/studio/stem-file/{song_name}/{stem_name}")
+async def get_studio_stem_file(song_name: str, stem_name: str, request: Request):
+    """Serve a separated stem file with Range support for seeking"""
+    stem_path = OUTPUT_DIR / "separated" / f"studio_{song_name}" / f"{stem_name}.wav"
+    
+    if not stem_path.exists():
+        raise HTTPException(status_code=404, detail=f"Stem bulunamadı: {stem_name}")
+    
+    file_size = stem_path.stat().st_size
+    range_header = request.headers.get("range")
+    
+    if range_header:
+        range_str = range_header.replace("bytes=", "")
+        parts = range_str.split("-")
+        start = int(parts[0]) if parts[0] else 0
+        end = int(parts[1]) if parts[1] else file_size - 1
+        end = min(end, file_size - 1)
+        content_length = end - start + 1
+
+        def iter_file():
+            with open(stem_path, "rb") as f:
+                f.seek(start)
+                remaining = content_length
+                while remaining > 0:
+                    chunk = f.read(min(65536, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
+
+        return StreamingResponse(
+            iter_file(), status_code=206, media_type="audio/wav",
+            headers={
+                "Content-Range": f"bytes {start}-{end}/{file_size}",
+                "Accept-Ranges": "bytes",
+                "Content-Length": str(content_length),
+            },
+        )
+    else:
+        return FileResponse(
+            path=str(stem_path), media_type="audio/wav",
+            headers={"Accept-Ranges": "bytes", "Content-Length": str(file_size)}
+        )
+
+
+# ========================
+# PROFESSIONAL VOCAL PRESETS
+# ========================
+
+@app.post("/api/studio/apply-vocal-preset")
+async def studio_apply_vocal_preset(
+    audio_file: UploadFile = File(...),
+    preset: str = Form("studio_polish"),
+    params_json: str = Form("{}"),
+):
+    """
+    Apply a professional multi-stage vocal processing chain.
+    Each preset chains multiple high-quality effects in the correct order,
+    mimicking real mixing engineer workflows.
+    
+    Presets:
+    - studio_polish: Full studio vocal chain (HP filter → De-ess → Compress → EQ → Saturation → Exciter → Limiter)
+    - natural_warmth: Warm natural vocal (Gentle HP → Warm EQ → Light compress → Tube saturation → Air)
+    - radio_ready: Broadcast-quality (Aggressive HP → Heavy compress → Bright EQ → De-ess → Limiter)
+    - soft_ballad: Gentle intimate vocal (HP → Light EQ → Gentle compress → Reverb space → Air shimmer)
+    - pop_vocal: Modern pop vocal (HP → Tight compress → Presence EQ → De-ess → Exciter → Stereo width)
+    - raw_clean: Minimal cleaning (HP filter → Normalize → Gentle de-ess)
+    """
+    import numpy as np
+    import soundfile as sf
+    from scipy.signal import butter, sosfiltfilt, lfilter
+
+    try:
+        params = json.loads(params_json)
+        audio_bytes = await audio_file.read()
+        audio_data, sr = sf.read(io.BytesIO(audio_bytes))
+        audio_data = audio_data.astype(np.float64)
+        
+        # Ensure stereo
+        if audio_data.ndim == 1:
+            audio_data = np.column_stack([audio_data, audio_data])
+        
+        nyquist = sr / 2.0
+        intensity = params.get('intensity', 0.7)  # 0.0-1.0 overall intensity
+        
+        print(f"[Studio] Applying vocal preset: {preset} (intensity={intensity})")
+        
+        def _hp_filter(data, freq, order=4):
+            """High-pass filter to remove rumble"""
+            sos = butter(order, freq / nyquist, btype='highpass', output='sos')
+            for ch in range(data.shape[1]):
+                data[:, ch] = sosfiltfilt(sos, data[:, ch])
+            return data
+        
+        def _lp_filter(data, freq, order=2):
+            """Low-pass filter"""
+            sos = butter(order, freq / nyquist, btype='lowpass', output='sos')
+            for ch in range(data.shape[1]):
+                data[:, ch] = sosfiltfilt(sos, data[:, ch])
+            return data
+        
+        def _band_eq(data, low, high, gain_db):
+            """Bandpass EQ boost/cut"""
+            if abs(gain_db) < 0.1:
+                return data
+            low_n = max(20, low) / nyquist
+            high_n = min(nyquist - 100, high) / nyquist
+            if low_n >= high_n or low_n <= 0 or high_n >= 1:
+                return data
+            try:
+                sos = butter(2, [low_n, high_n], btype='bandpass', output='sos')
+                gain_linear = 10 ** (gain_db / 20.0) - 1.0
+                for ch in range(data.shape[1]):
+                    band = sosfiltfilt(sos, data[:, ch])
+                    data[:, ch] = data[:, ch] + band * gain_linear
+            except Exception:
+                pass
+            return data
+        
+        def _compressor(data, threshold_db=-18, ratio=3.0, attack_ms=10, release_ms=100, makeup_db=0):
+            """Dynamic range compressor with attack/release envelope"""
+            threshold = 10 ** (threshold_db / 20.0)
+            makeup = 10 ** (makeup_db / 20.0)
+            attack_coeff = np.exp(-1.0 / (sr * attack_ms / 1000.0))
+            release_coeff = np.exp(-1.0 / (sr * release_ms / 1000.0))
+            
+            for ch in range(data.shape[1]):
+                channel = data[:, ch]
+                envelope = np.zeros(len(channel))
+                env = 0.0
+                for i in range(len(channel)):
+                    level = abs(channel[i])
+                    if level > env:
+                        env = attack_coeff * env + (1 - attack_coeff) * level
+                    else:
+                        env = release_coeff * env + (1 - release_coeff) * level
+                    envelope[i] = env
+                
+                # Apply gain reduction
+                gain = np.ones(len(channel))
+                above = envelope > threshold
+                if np.any(above):
+                    gain[above] = (threshold / envelope[above]) ** (1 - 1/ratio)
+                
+                data[:, ch] = channel * gain * makeup
+            return data
+        
+        def _de_esser(data, freq=6000, threshold_db=-20, reduction=0.6):
+            """Reduce sibilance in vocal"""
+            threshold = 10 ** (threshold_db / 20.0)
+            low_n = max(20, freq - 1500) / nyquist
+            high_n = min(nyquist - 100, freq + 3000) / nyquist
+            if low_n >= high_n or low_n <= 0 or high_n >= 1:
+                return data
+            try:
+                sos = butter(2, [low_n, high_n], btype='bandpass', output='sos')
+                for ch in range(data.shape[1]):
+                    sib_band = sosfiltfilt(sos, data[:, ch])
+                    sib_env = np.abs(sib_band)
+                    # Smooth envelope
+                    smooth_len = int(sr * 0.005)
+                    if smooth_len > 1:
+                        kernel = np.ones(smooth_len) / smooth_len
+                        sib_env = np.convolve(sib_env, kernel, mode='same')
+                    # Reduce where sibilance exceeds threshold
+                    mask = sib_env > threshold
+                    if np.any(mask):
+                        gain = np.ones(len(data[:, ch]))
+                        gain[mask] = 1.0 - reduction * np.minimum(1.0, (sib_env[mask] - threshold) / threshold)
+                        # Only reduce the sibilant band, not the whole signal
+                        data[:, ch] = data[:, ch] - sib_band * (1 - gain)
+            except Exception:
+                pass
+            return data
+        
+        def _saturation(data, drive=0.3, mix=0.3):
+            """Tube-style harmonic saturation for warmth"""
+            for ch in range(data.shape[1]):
+                driven = np.tanh(data[:, ch] * (1 + drive * 3))
+                data[:, ch] = data[:, ch] * (1 - mix) + driven * mix
+            return data
+        
+        def _exciter(data, freq=3000, amount=0.3):
+            """Harmonic exciter — adds sparkle/presence"""
+            low_n = freq / nyquist
+            high_n = min(nyquist - 100, freq * 3) / nyquist
+            if low_n >= high_n or low_n <= 0 or high_n >= 1:
+                return data
+            try:
+                sos = butter(2, [low_n, high_n], btype='bandpass', output='sos')
+                for ch in range(data.shape[1]):
+                    band = sosfiltfilt(sos, data[:, ch])
+                    # Generate harmonics via soft clipping
+                    harmonics = np.tanh(band * 3) * amount
+                    data[:, ch] = data[:, ch] + harmonics
+            except Exception:
+                pass
+            return data
+        
+        def _stereo_width(data, width=1.3):
+            """Adjust stereo width (>1 = wider, <1 = narrower)"""
+            if data.shape[1] < 2:
+                return data
+            mid = (data[:, 0] + data[:, 1]) * 0.5
+            side = (data[:, 0] - data[:, 1]) * 0.5
+            side = side * width
+            data[:, 0] = mid + side
+            data[:, 1] = mid - side
+            return data
+        
+        def _limiter(data, ceiling_db=-0.5):
+            """Brick-wall limiter"""
+            ceiling = 10 ** (ceiling_db / 20.0)
+            peak = np.abs(data).max()
+            if peak > ceiling:
+                data = data * (ceiling / peak)
+            return data
+        
+        def _normalize(data, target_db=-1.0):
+            """Peak normalize"""
+            target = 10 ** (target_db / 20.0)
+            peak = np.abs(data).max()
+            if peak > 0:
+                data = data * (target / peak)
+            return data
+        
+        # ========== PRESET CHAINS ==========
+        
+        if preset == 'studio_polish':
+            # Professional studio vocal chain — the gold standard
+            hp_freq = 80 + (1 - intensity) * 40  # 80-120 Hz
+            audio_data = _hp_filter(audio_data, hp_freq)
+            audio_data = _de_esser(audio_data, freq=6500, threshold_db=-22 + (1-intensity)*6, reduction=0.5 * intensity)
+            audio_data = _compressor(audio_data, threshold_db=-20 + (1-intensity)*6, ratio=3.0 + intensity, attack_ms=8, release_ms=80, makeup_db=2 * intensity)
+            # EQ: Cut mud, boost presence & air
+            audio_data = _band_eq(audio_data, 200, 400, -2 * intensity)     # Cut mud
+            audio_data = _band_eq(audio_data, 800, 1200, -1.5 * intensity)  # Cut boxiness
+            audio_data = _band_eq(audio_data, 2500, 5000, 3 * intensity)    # Presence
+            audio_data = _band_eq(audio_data, 8000, 12000, 2 * intensity)   # Air
+            audio_data = _saturation(audio_data, drive=0.2 * intensity, mix=0.15 * intensity)
+            audio_data = _exciter(audio_data, freq=4000, amount=0.2 * intensity)
+            audio_data = _limiter(audio_data, ceiling_db=-0.5)
+        
+        elif preset == 'natural_warmth':
+            # Warm, natural vocal — singer-songwriter / acoustic
+            audio_data = _hp_filter(audio_data, 60, order=2)
+            audio_data = _band_eq(audio_data, 150, 350, 2.5 * intensity)    # Warmth
+            audio_data = _band_eq(audio_data, 600, 900, -1 * intensity)     # Reduce nasal
+            audio_data = _band_eq(audio_data, 2000, 4000, 1.5 * intensity)  # Gentle presence  
+            audio_data = _band_eq(audio_data, 10000, 14000, 1 * intensity)  # Airy top
+            audio_data = _compressor(audio_data, threshold_db=-16 + (1-intensity)*4, ratio=2.0, attack_ms=20, release_ms=150, makeup_db=1.5 * intensity)
+            audio_data = _saturation(audio_data, drive=0.35 * intensity, mix=0.2 * intensity)
+            audio_data = _limiter(audio_data, ceiling_db=-0.8)
+        
+        elif preset == 'radio_ready':
+            # Broadcast / radio vocal — loud, bright, in-your-face
+            audio_data = _hp_filter(audio_data, 100)
+            audio_data = _compressor(audio_data, threshold_db=-24 + (1-intensity)*8, ratio=5.0, attack_ms=3, release_ms=50, makeup_db=4 * intensity)
+            audio_data = _de_esser(audio_data, freq=7000, threshold_db=-18, reduction=0.7 * intensity)
+            audio_data = _band_eq(audio_data, 200, 500, -3 * intensity)     # Heavy mud cut
+            audio_data = _band_eq(audio_data, 1500, 3500, 2 * intensity)    # Forward mid
+            audio_data = _band_eq(audio_data, 3500, 6000, 4 * intensity)    # Brightness
+            audio_data = _band_eq(audio_data, 8000, 12000, 3 * intensity)   # Sparkle
+            audio_data = _exciter(audio_data, freq=5000, amount=0.35 * intensity)
+            audio_data = _saturation(audio_data, drive=0.15 * intensity, mix=0.1 * intensity)
+            # Second lighter compression for consistency
+            audio_data = _compressor(audio_data, threshold_db=-12, ratio=2.0, attack_ms=15, release_ms=120, makeup_db=1)
+            audio_data = _limiter(audio_data, ceiling_db=-0.3)
+        
+        elif preset == 'soft_ballad':
+            # Gentle, intimate vocal — ballad / slow song
+            audio_data = _hp_filter(audio_data, 70, order=2)
+            audio_data = _band_eq(audio_data, 200, 500, 1.5 * intensity)    # Body
+            audio_data = _band_eq(audio_data, 2000, 3500, 1 * intensity)    # Gentle clarity
+            audio_data = _band_eq(audio_data, 8000, 13000, 2.5 * intensity) # Air shimmer
+            audio_data = _compressor(audio_data, threshold_db=-14 + (1-intensity)*4, ratio=2.0, attack_ms=25, release_ms=200, makeup_db=1 * intensity)
+            audio_data = _saturation(audio_data, drive=0.15 * intensity, mix=0.1 * intensity)
+            audio_data = _de_esser(audio_data, freq=6500, threshold_db=-20, reduction=0.4 * intensity)
+            audio_data = _stereo_width(audio_data, width=1.0 + 0.2 * intensity)
+            audio_data = _limiter(audio_data, ceiling_db=-1.0)
+        
+        elif preset == 'pop_vocal':
+            # Modern pop vocal — tight, present, excited
+            audio_data = _hp_filter(audio_data, 90)
+            audio_data = _compressor(audio_data, threshold_db=-22 + (1-intensity)*6, ratio=4.0, attack_ms=5, release_ms=60, makeup_db=3 * intensity)
+            audio_data = _de_esser(audio_data, freq=7000, threshold_db=-20, reduction=0.6 * intensity)
+            audio_data = _band_eq(audio_data, 200, 400, -2 * intensity)     # Tight low
+            audio_data = _band_eq(audio_data, 1000, 2000, 1 * intensity)    # Body
+            audio_data = _band_eq(audio_data, 3000, 6000, 3.5 * intensity)  # In-your-face presence
+            audio_data = _band_eq(audio_data, 9000, 13000, 2 * intensity)   # Top sparkle
+            audio_data = _exciter(audio_data, freq=3500, amount=0.3 * intensity)
+            audio_data = _saturation(audio_data, drive=0.2 * intensity, mix=0.12 * intensity)
+            audio_data = _stereo_width(audio_data, width=1.0 + 0.15 * intensity)
+            audio_data = _limiter(audio_data, ceiling_db=-0.3)
+        
+        elif preset == 'raw_clean':
+            # Minimal cleanup — just make it usable
+            audio_data = _hp_filter(audio_data, 75, order=3)
+            audio_data = _de_esser(audio_data, freq=6500, threshold_db=-18, reduction=0.3)
+            audio_data = _normalize(audio_data, target_db=-1.0)
+        
+        elif preset == 'hiphop_vocal':
+            # Hip-hop / rap vocal — aggressive, forward, punchy
+            audio_data = _hp_filter(audio_data, 100)
+            audio_data = _compressor(audio_data, threshold_db=-26 + (1-intensity)*8, ratio=6.0, attack_ms=2, release_ms=40, makeup_db=5 * intensity)
+            audio_data = _de_esser(audio_data, freq=7500, threshold_db=-18, reduction=0.7 * intensity)
+            audio_data = _band_eq(audio_data, 150, 350, -3 * intensity)     # Clean low
+            audio_data = _band_eq(audio_data, 800, 1500, 2 * intensity)     # Weight
+            audio_data = _band_eq(audio_data, 3000, 5000, 4 * intensity)    # Aggressive presence
+            audio_data = _band_eq(audio_data, 7000, 10000, 2.5 * intensity) # Bite
+            audio_data = _exciter(audio_data, freq=4000, amount=0.4 * intensity)
+            audio_data = _saturation(audio_data, drive=0.3 * intensity, mix=0.2 * intensity)
+            audio_data = _limiter(audio_data, ceiling_db=-0.2)
+        
+        elif preset == 'rnb_smooth':
+            # R&B / Soul — smooth, warm, rich
+            audio_data = _hp_filter(audio_data, 65, order=2)
+            audio_data = _band_eq(audio_data, 150, 400, 3 * intensity)      # Full warmth
+            audio_data = _band_eq(audio_data, 600, 1000, -1 * intensity)    # Clean mids
+            audio_data = _band_eq(audio_data, 2000, 4000, 2 * intensity)    # Silky presence
+            audio_data = _band_eq(audio_data, 8000, 13000, 2 * intensity)   # Airy
+            audio_data = _compressor(audio_data, threshold_db=-18 + (1-intensity)*4, ratio=2.5, attack_ms=12, release_ms=120, makeup_db=2 * intensity)
+            audio_data = _saturation(audio_data, drive=0.4 * intensity, mix=0.25 * intensity)
+            audio_data = _de_esser(audio_data, freq=6000, threshold_db=-22, reduction=0.5 * intensity)
+            audio_data = _stereo_width(audio_data, width=1.0 + 0.25 * intensity)
+            audio_data = _limiter(audio_data, ceiling_db=-0.5)
+        
+        elif preset == 'rock_vocal':
+            # Rock vocal — gritty, powerful, cutting
+            audio_data = _hp_filter(audio_data, 100)
+            audio_data = _compressor(audio_data, threshold_db=-24 + (1-intensity)*6, ratio=5.0, attack_ms=3, release_ms=50, makeup_db=4 * intensity)
+            audio_data = _band_eq(audio_data, 200, 500, -2 * intensity)     # Tight bottom
+            audio_data = _band_eq(audio_data, 1000, 2500, 2 * intensity)    # Midrange bark
+            audio_data = _band_eq(audio_data, 3000, 6000, 3 * intensity)    # Cut through
+            audio_data = _saturation(audio_data, drive=0.5 * intensity, mix=0.3 * intensity)  # Grit!
+            audio_data = _de_esser(audio_data, freq=7000, threshold_db=-20, reduction=0.5 * intensity)
+            audio_data = _exciter(audio_data, freq=4000, amount=0.25 * intensity)
+            audio_data = _limiter(audio_data, ceiling_db=-0.3)
+        
+        else:
+            raise HTTPException(status_code=400, detail=f"Bilinmeyen preset: {preset}")
+        
+        # Final safety limiter
+        peak = np.abs(audio_data).max()
+        if peak > 0.99:
+            audio_data = audio_data / peak * 0.95
+        
+        audio_data = audio_data.astype(np.float32)
+        
+        output_buffer = io.BytesIO()
+        sf.write(output_buffer, audio_data, sr, format='WAV', subtype='PCM_24')
+        output_buffer.seek(0)
+        
+        print(f"[Studio] ✅ Vocal preset '{preset}' applied successfully")
+        
+        return StreamingResponse(
+            output_buffer, media_type="audio/wav",
+            headers={"Content-Disposition": f"attachment; filename=vocal_{preset}.wav"}
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Vokal preset hatası: {str(e)}")
+
+
+@app.get("/api/studio/vocal-presets")
+async def list_vocal_presets():
+    """Return available vocal presets with descriptions"""
+    return {
+        "presets": [
+            {
+                "id": "studio_polish",
+                "name": "🎙️ Studio Polish",
+                "description": "Profesyonel stüdyo vokal zinciri — HP, De-ess, Kompresör, EQ, Satürasyon, Exciter",
+                "category": "professional",
+                "tags": ["genel", "profesyonel", "önerilen"]
+            },
+            {
+                "id": "natural_warmth",
+                "name": "☀️ Doğal Sıcaklık",
+                "description": "Sıcak, doğal vokal — akustik & singer-songwriter için ideal",
+                "category": "style",
+                "tags": ["akustik", "doğal", "sıcak"]
+            },
+            {
+                "id": "radio_ready",
+                "name": "📻 Radyo Kalitesi",
+                "description": "Yayın kalitesinde vokal — parlak, güçlü, net",
+                "category": "professional",
+                "tags": ["radyo", "yayın", "parlak"]
+            },
+            {
+                "id": "soft_ballad",
+                "name": "🌙 Yumuşak Balad",
+                "description": "Nazik, samimi vokal — balad & yavaş şarkılar için",
+                "category": "style",
+                "tags": ["balad", "romantik", "yumuşak"]
+            },
+            {
+                "id": "pop_vocal",
+                "name": "🎤 Modern Pop",
+                "description": "Modern pop vokali — sıkı, parlak, enerjik",
+                "category": "style",
+                "tags": ["pop", "modern", "enerjik"]
+            },
+            {
+                "id": "hiphop_vocal",
+                "name": "🔥 Hip-Hop / Rap",
+                "description": "Agresif, güçlü vokal — rap & hip-hop için",
+                "category": "style",
+                "tags": ["rap", "hip-hop", "agresif"]
+            },
+            {
+                "id": "rnb_smooth",
+                "name": "✨ R&B Smooth",
+                "description": "Pürüzsüz, zengin vokal — R&B & soul müzik için",
+                "category": "style",
+                "tags": ["rnb", "soul", "pürüzsüz"]
+            },
+            {
+                "id": "rock_vocal",
+                "name": "🎸 Rock",
+                "description": "Güçlü, keskin vokal — rock & alternatif için",
+                "category": "style",
+                "tags": ["rock", "güçlü", "keskin"]
+            },
+            {
+                "id": "raw_clean",
+                "name": "🧹 Temiz / Minimal",
+                "description": "Sadece temel temizlik — HP filtre, normalize, hafif de-ess",
+                "category": "utility",
+                "tags": ["temiz", "doğal", "minimal"]
+            },
+        ]
+    }
+
+
+@app.post("/api/studio/apply-effect")
+async def studio_apply_effect(
+    audio_file: UploadFile = File(...),
+    effect_type: str = Form(...),
+    params_json: str = Form("{}"),
+):
+    """
+    Apply a single audio effect server-side and return the processed audio.
+    For high-quality processing that can't be done in Web Audio API.
+    """
+    import numpy as np
+    import soundfile as sf
+    
+    try:
+        params = json.loads(params_json)
+        audio_bytes = await audio_file.read()
+        audio_data, sr = sf.read(io.BytesIO(audio_bytes))
+        audio_data = audio_data.astype(np.float32)
+        
+        print(f"[Studio] Applying effect: {effect_type} with params: {params}")
+        
+        if effect_type == 'pitch_shift':
+            import librosa
+            semitones = params.get('semitones', 0)
+            if audio_data.ndim == 1:
+                audio_data = librosa.effects.pitch_shift(audio_data, sr=sr, n_steps=semitones)
+            else:
+                for ch in range(audio_data.shape[1]):
+                    audio_data[:, ch] = librosa.effects.pitch_shift(audio_data[:, ch], sr=sr, n_steps=semitones)
+        
+        elif effect_type == 'tempo_change':
+            import librosa
+            rate = params.get('rate', 1.0)
+            if audio_data.ndim == 1:
+                audio_data = librosa.effects.time_stretch(audio_data, rate=rate)
+            else:
+                channels = []
+                for ch in range(audio_data.shape[1]):
+                    channels.append(librosa.effects.time_stretch(audio_data[:, ch], rate=rate))
+                min_len = min(len(c) for c in channels)
+                audio_data = np.column_stack([c[:min_len] for c in channels])
+        
+        elif effect_type == 'vocal_enhance':
+            from scipy.signal import butter, sosfiltfilt
+            # High-pass at 80Hz, presence boost at 3-6kHz
+            sos_hp = butter(4, 80, btype='highpass', fs=sr, output='sos')
+            sos_pres = butter(2, [2500, 6000], btype='bandpass', fs=sr, output='sos')
+            amount = params.get('amount', 0.3)
+            if audio_data.ndim == 1:
+                filtered = sosfiltfilt(sos_hp, audio_data)
+                presence = sosfiltfilt(sos_pres, audio_data)
+                audio_data = filtered + presence * amount
+            else:
+                for ch in range(audio_data.shape[1]):
+                    filtered = sosfiltfilt(sos_hp, audio_data[:, ch])
+                    presence = sosfiltfilt(sos_pres, audio_data[:, ch])
+                    audio_data[:, ch] = filtered + presence * amount
+        
+        elif effect_type == 'bass_boost':
+            from scipy.signal import butter, sosfiltfilt
+            sos = butter(2, 150, btype='lowpass', fs=sr, output='sos')
+            amount = params.get('amount', 0.5)
+            if audio_data.ndim == 1:
+                bass = sosfiltfilt(sos, audio_data)
+                audio_data = audio_data + bass * amount
+            else:
+                for ch in range(audio_data.shape[1]):
+                    bass = sosfiltfilt(sos, audio_data[:, ch])
+                    audio_data[:, ch] = audio_data[:, ch] + bass * amount
+        
+        elif effect_type == 'normalize':
+            peak = np.abs(audio_data).max()
+            if peak > 0:
+                target = params.get('target', 0.95)
+                audio_data = audio_data * (target / peak)
+        
+        # Limiter
+        peak = np.abs(audio_data).max()
+        if peak > 0.99:
+            audio_data = audio_data / peak * 0.95
+        
+        output_buffer = io.BytesIO()
+        sf.write(output_buffer, audio_data, sr, format='WAV', subtype='PCM_16')
+        output_buffer.seek(0)
+        
+        return StreamingResponse(
+            output_buffer, media_type="audio/wav",
+            headers={"Content-Disposition": f"attachment; filename=processed.wav"}
+        )
+    
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Efekt uygulama hatası: {str(e)}")
+
 
 @app.post("/api/studio/noise-reduce")
 async def studio_noise_reduce(
@@ -1645,6 +2705,191 @@ async def download_separated_stem(filename: str, stem: str, request: Request):
             filename=f"{filename}_{stem}.wav",
             headers={"Accept-Ranges": "bytes", "Content-Length": str(file_size)},
         )
+
+
+# ========================
+# VOICE AI TRAINING ENDPOINTS
+# ========================
+
+@app.post("/api/voice-training/train")
+async def train_voice_model(
+    voice_files: List[UploadFile] = File(None),
+    model_name: str = Form("Yeni Model"),
+    profile_ids: str = Form(None),
+):
+    """
+    Ses modeli eğitimi — çok örnekli speaker embedding + adapter ağı.
+    
+    Eğitim aşamaları:
+    1. Multi-sample embedding aggregation (kalite ağırlıklı)
+    2. Speaker adapter network eğitimi (LoRA-style, self-reconstruction)
+    3. Optimal post-processing parametre keşfi
+    
+    voice_files: Yeni ses dosyaları (opsiyonel)
+    profile_ids: Mevcut ses profillerinin ID'leri (virgülle ayrılmış, opsiyonel)
+    """
+    from services.voice_model_trainer import get_trainer
+    
+    trainer = get_trainer()
+    
+    # Parse profile IDs
+    parsed_profile_ids = []
+    if profile_ids:
+        parsed_profile_ids = [pid.strip() for pid in profile_ids.split(",") if pid.strip()]
+    
+    # Validate: at least one source needed
+    has_files = voice_files is not None and len(voice_files) > 0 and voice_files[0].filename
+    has_profiles = len(parsed_profile_ids) > 0
+    
+    if not has_files and not has_profiles:
+        raise HTTPException(
+            status_code=400,
+            detail="En az bir ses dosyası veya ses profili gerekli"
+        )
+    
+    try:
+        # Create model
+        model_id = trainer.create_model(model_name)
+        
+        # Save uploaded voice files to temp
+        audio_paths = []
+        sample_names = []
+        
+        if has_files:
+            for vf in voice_files:
+                if not vf.filename:
+                    continue
+                temp_path = UPLOAD_DIR / f"train_{vf.filename}"
+                with open(temp_path, "wb") as f:
+                    f.write(await vf.read())
+                # Convert to WAV if needed
+                temp_path = convert_audio_to_wav(temp_path)
+                audio_paths.append(str(temp_path))
+                sample_names.append(vf.filename.rsplit(".", 1)[0])
+        
+        # Run full training pipeline
+        result = trainer.train_full(
+            model_id=model_id,
+            audio_paths=audio_paths if audio_paths else None,
+            sample_names=sample_names if sample_names else None,
+            profile_ids=parsed_profile_ids if parsed_profile_ids else None,
+        )
+        
+        # Cleanup temp files
+        for p in audio_paths:
+            try:
+                os.remove(p)
+            except:
+                pass
+        
+        return {
+            "message": f"Model eğitimi tamamlandı: {model_name}",
+            "model_id": model_id,
+            "quality_grade": result.get("final", {}).get("quality_grade", "D"),
+            "consistency_score": result.get("final", {}).get("consistency_score", 0),
+            "num_samples": result.get("final", {}).get("num_samples", 0),
+            "total_duration": result.get("final", {}).get("total_duration", 0),
+            "has_adapter": result.get("final", {}).get("has_adapter", False),
+            "details": result,
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Eğitim hatası: {str(e)}")
+
+
+@app.post("/api/voice-training/add-samples")
+async def add_training_samples(
+    model_id: str = Form(...),
+    voice_files: List[UploadFile] = File(...),
+):
+    """Mevcut eğitilmiş modele yeni ses örnekleri ekle ve yeniden eğit"""
+    from services.voice_model_trainer import get_trainer
+    
+    trainer = get_trainer()
+    
+    try:
+        # Save uploaded files
+        audio_paths = []
+        sample_names = []
+        
+        for vf in voice_files:
+            if not vf.filename:
+                continue
+            temp_path = UPLOAD_DIR / f"train_{vf.filename}"
+            with open(temp_path, "wb") as f:
+                f.write(await vf.read())
+            temp_path = convert_audio_to_wav(temp_path)
+            audio_paths.append(str(temp_path))
+            sample_names.append(vf.filename.rsplit(".", 1)[0])
+        
+        if not audio_paths:
+            raise HTTPException(status_code=400, detail="En az bir ses dosyası gerekli")
+        
+        # Add samples
+        sample_result = trainer.add_samples(model_id, audio_paths, sample_names)
+        
+        # Re-train adapter if enough samples
+        metadata = trainer._load_metadata(model_id)
+        adapter_result = None
+        if metadata and metadata.get("num_samples", 0) >= 2:
+            adapter_epochs = min(30 + metadata["num_samples"] * 5, 100)
+            try:
+                adapter_result = trainer.train_adapter(model_id, epochs=adapter_epochs)
+            except Exception as e:
+                print(f"[WARNING] Adapter eğitimi başarısız: {e}")
+        
+        # Cleanup
+        for p in audio_paths:
+            try:
+                os.remove(p)
+            except:
+                pass
+        
+        # Reload metadata
+        metadata = trainer._load_metadata(model_id)
+        
+        return {
+            "message": f"{sample_result['samples_added']} örnek eklendi, model güncellendi",
+            "model_id": model_id,
+            "samples_added": sample_result["samples_added"],
+            "total_samples": metadata.get("num_samples", 0),
+            "quality_grade": metadata.get("quality_grade", "D"),
+            "consistency_score": metadata.get("consistency_score", 0),
+            "has_adapter": metadata.get("has_adapter", False),
+            "adapter_trained": adapter_result is not None,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Örnek ekleme hatası: {str(e)}")
+
+
+@app.get("/api/voice-training/models")
+async def list_trained_models():
+    """Tüm eğitilmiş ses modellerini listele"""
+    from services.voice_model_trainer import get_trainer
+    
+    trainer = get_trainer()
+    models = trainer.list_models()
+    
+    return {"models": models}
+
+
+@app.delete("/api/voice-training/models/{model_id}")
+async def delete_trained_model(model_id: str):
+    """Eğitilmiş ses modelini sil"""
+    from services.voice_model_trainer import get_trainer
+    
+    trainer = get_trainer()
+    success = trainer.delete_model(model_id)
+    
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Model bulunamadı: {model_id}")
+    
+    return {"message": f"Model silindi: {model_id}"}
 
 
 # ========================

@@ -1,0 +1,415 @@
+/* ============================================================
+   DAWSmartComposer — Genre-based random music generator
+   Picks a style, generates coherent drums + bass + chords +
+   melody, previews, exports to DAW timeline as AudioBuffer clip
+   ============================================================ */
+import React, { useState, useCallback, useRef, useEffect, memo } from 'react'
+import { getGenres, getGenre, generateSong, renderSongToBuffer } from './genrePatterns'
+import type { GeneratedSong } from './genrePatterns'
+
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+
+interface Props {
+  bpm: number
+  onSongExport: (buffer: AudioBuffer, name: string, bpm: number) => void
+}
+
+const DAWSmartComposer: React.FC<Props> = memo(({ bpm: dawBpm, onSongExport }) => {
+  const genres = getGenres()
+  const [selectedGenre, setSelectedGenre] = useState(genres[0].id)
+  const [rootNote, setRootNote] = useState(0) // C
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [generatedSong, setGeneratedSong] = useState<GeneratedSong | null>(null)
+  const [renderedBuffer, setRenderedBuffer] = useState<AudioBuffer | null>(null)
+  const [status, setStatus] = useState<string | null>(null)
+  const [history, setHistory] = useState<Array<{ genre: string; buffer: AudioBuffer; name: string; bpm: number }>>([])
+
+  const ctxRef = useRef<AudioContext | null>(null)
+  const sourceRef = useRef<AudioBufferSourceNode | null>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const rafRef = useRef(0)
+  const analyserRef = useRef<AnalyserNode | null>(null)
+
+  const getCtx = useCallback(() => {
+    if (!ctxRef.current || ctxRef.current.state === 'closed') {
+      ctxRef.current = new AudioContext()
+      analyserRef.current = ctxRef.current.createAnalyser()
+      analyserRef.current.fftSize = 256
+      analyserRef.current.connect(ctxRef.current.destination)
+    }
+    if (ctxRef.current.state === 'suspended') ctxRef.current.resume()
+    return ctxRef.current
+  }, [])
+
+  // ---- Generate ----
+  const handleGenerate = useCallback(async () => {
+    setIsGenerating(true)
+    setStatus('Şarkı oluşturuluyor...')
+
+    // Stop current preview
+    if (sourceRef.current) {
+      try { sourceRef.current.stop() } catch {}
+      sourceRef.current = null
+    }
+    setIsPlaying(false)
+
+    try {
+      // Small delay to let UI update
+      await new Promise(r => setTimeout(r, 50))
+
+      const song = generateSong(selectedGenre, rootNote)
+      setGeneratedSong(song)
+
+      const genre = getGenre(selectedGenre)!
+      setStatus(`Ses sentezleniyor (${song.bpm} BPM)...`)
+      await new Promise(r => setTimeout(r, 50))
+
+      const buffer = await renderSongToBuffer(song, genre)
+      setRenderedBuffer(buffer)
+
+      setStatus(`✓ ${genre.name} — ${song.bpm} BPM — ${song.bars} bar`)
+    } catch (e) {
+      console.error('Generation failed:', e)
+      setStatus('Hata oluştu!')
+    } finally {
+      setIsGenerating(false)
+    }
+  }, [selectedGenre, rootNote])
+
+  // ---- Preview play/stop ----
+  const handlePlay = useCallback(() => {
+    if (!renderedBuffer) return
+    if (isPlaying && sourceRef.current) {
+      try { sourceRef.current.stop() } catch {}
+      sourceRef.current = null
+      setIsPlaying(false)
+      return
+    }
+
+    const ctx = getCtx()
+    const src = ctx.createBufferSource()
+    src.buffer = renderedBuffer
+    const gain = ctx.createGain()
+    gain.gain.value = 0.8
+    src.connect(gain)
+    gain.connect(analyserRef.current!)
+    src.onended = () => setIsPlaying(false)
+    src.start()
+    sourceRef.current = src
+    setIsPlaying(true)
+  }, [renderedBuffer, isPlaying, getCtx])
+
+  // ---- Export to DAW timeline ----
+  const handleExport = useCallback(() => {
+    if (!renderedBuffer || !generatedSong) return
+    const genre = getGenre(selectedGenre)!
+    const name = `${genre.emoji} ${genre.name} — ${NOTE_NAMES[rootNote]} — ${generatedSong.bpm}bpm`
+    onSongExport(renderedBuffer, name, generatedSong.bpm)
+
+
+
+    // Add to history
+    setHistory(prev => [
+      { genre: genre.name, buffer: renderedBuffer, name, bpm: generatedSong.bpm },
+      ...prev.slice(0, 9),
+    ])
+
+    setStatus('✓ Timeline\'a eklendi!')
+    setTimeout(() => setStatus(`✓ ${genre.name} — ${generatedSong.bpm} BPM — ${generatedSong.bars} bar`), 2000)
+  }, [renderedBuffer, generatedSong, selectedGenre, rootNote, onSongExport])
+
+  // ---- Re-roll (same genre, new random) ----
+  const handleReroll = useCallback(() => {
+    handleGenerate()
+  }, [handleGenerate])
+
+  // ---- Visualizer canvas ----
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx2d = canvas.getContext('2d')!
+    const dpr = window.devicePixelRatio || 1
+
+    const resize = () => {
+      const rect = canvas.getBoundingClientRect()
+      canvas.width = Math.round(rect.width * dpr)
+      canvas.height = Math.round(rect.height * dpr)
+      ctx2d.scale(dpr, dpr)
+    }
+    resize()
+    const ro = new ResizeObserver(resize)
+    ro.observe(canvas)
+
+    const genre = getGenre(selectedGenre)
+    const accentColor = genre ? genreColor(genre.id) : '#6366f1'
+
+    const draw = () => {
+      const rect = canvas.getBoundingClientRect()
+      const w = rect.width
+      const h = rect.height
+      ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx2d.clearRect(0, 0, w, h)
+
+      // Background
+      const bg = ctx2d.createLinearGradient(0, 0, w, 0)
+      bg.addColorStop(0, '#0a0a18')
+      bg.addColorStop(0.5, '#0d0d20')
+      bg.addColorStop(1, '#0a0a18')
+      ctx2d.fillStyle = bg
+      ctx2d.fillRect(0, 0, w, h)
+
+      if (isPlaying && analyserRef.current) {
+        // Live spectrum
+        const data = new Uint8Array(analyserRef.current.frequencyBinCount)
+        analyserRef.current.getByteFrequencyData(data)
+        const barCount = 48
+        const barW = w / barCount
+
+        for (let i = 0; i < barCount; i++) {
+          const idx = Math.floor(i * data.length / barCount)
+          const val = data[idx] / 255
+          const bh = Math.max(1, val * h * 0.9)
+          const grad = ctx2d.createLinearGradient(0, h - bh, 0, h)
+          grad.addColorStop(0, accentColor)
+          grad.addColorStop(1, accentColor + '40')
+          ctx2d.fillStyle = grad
+          ctx2d.beginPath()
+          ctx2d.roundRect(i * barW + 1, h - bh, barW - 2, bh, 2)
+          ctx2d.fill()
+        }
+      } else if (renderedBuffer) {
+        // Waveform preview
+        const chan = renderedBuffer.getChannelData(0)
+        const step = Math.floor(chan.length / w)
+        ctx2d.strokeStyle = accentColor
+        ctx2d.lineWidth = 1.5
+        ctx2d.beginPath()
+        for (let x = 0; x < w; x++) {
+          const idx = x * step
+          let max = 0
+          for (let j = idx; j < Math.min(idx + step, chan.length); j++) {
+            const abs = Math.abs(chan[j])
+            if (abs > max) max = abs
+          }
+          const y = h / 2 - max * h * 0.45
+          if (x === 0) ctx2d.moveTo(x, y)
+          else ctx2d.lineTo(x, y)
+        }
+        // Mirror
+        for (let x = w - 1; x >= 0; x--) {
+          const idx = x * step
+          let max = 0
+          for (let j = idx; j < Math.min(idx + step, chan.length); j++) {
+            const abs = Math.abs(chan[j])
+            if (abs > max) max = abs
+          }
+          const y = h / 2 + max * h * 0.45
+          ctx2d.lineTo(x, y)
+        }
+        ctx2d.closePath()
+        ctx2d.fillStyle = accentColor + '25'
+        ctx2d.fill()
+        ctx2d.stroke()
+      } else {
+        // Idle animation
+        const barCount = 32
+        const barW = w / barCount
+        for (let i = 0; i < barCount; i++) {
+          const bh = 3 + Math.sin(i * 0.4 + Date.now() * 0.001) * 2
+          ctx2d.fillStyle = accentColor + '30'
+          ctx2d.fillRect(i * barW + 1, h - bh, barW - 2, bh)
+        }
+      }
+
+      rafRef.current = requestAnimationFrame(draw)
+    }
+    rafRef.current = requestAnimationFrame(draw)
+    return () => { cancelAnimationFrame(rafRef.current); ro.disconnect() }
+  }, [isPlaying, renderedBuffer, selectedGenre])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (sourceRef.current) try { sourceRef.current.stop() } catch {}
+      ctxRef.current?.close()
+      cancelAnimationFrame(rafRef.current)
+    }
+  }, [])
+
+  const currentGenre = getGenre(selectedGenre)
+
+  return (
+    <div className="daw-composer">
+      {/* Left: Genre selector */}
+      <div className="daw-composer-genres">
+        <div className="daw-composer-genres-title">Tarz Seç</div>
+        <div className="daw-composer-genre-list">
+          {genres.map(g => (
+            <button
+              key={g.id}
+              className={`daw-composer-genre-btn ${selectedGenre === g.id ? 'active' : ''}`}
+              onClick={() => setSelectedGenre(g.id)}
+              style={{
+                borderColor: selectedGenre === g.id ? genreColor(g.id) : undefined,
+                background: selectedGenre === g.id ? genreColor(g.id) + '18' : undefined,
+              }}
+            >
+              <span className="daw-composer-genre-emoji">{g.emoji}</span>
+              <span className="daw-composer-genre-name">{g.name}</span>
+              <span className="daw-composer-genre-bpm">{g.bpmRange[0]}-{g.bpmRange[1]}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Right: Controls + preview */}
+      <div className="daw-composer-main">
+        {/* Top controls */}
+        <div className="daw-composer-controls">
+          <div className="daw-composer-control-group">
+            <label className="daw-label">Kök Nota</label>
+            <select
+              className="daw-select"
+              value={rootNote}
+              onChange={e => setRootNote(Number(e.target.value))}
+            >
+              {NOTE_NAMES.map((n, i) => <option key={i} value={i}>{n}</option>)}
+            </select>
+          </div>
+
+          {currentGenre && (
+            <div className="daw-composer-genre-info">
+              <span className="daw-composer-info-tag">BPM: {currentGenre.bpmRange[0]}-{currentGenre.bpmRange[1]}</span>
+              <span className="daw-composer-info-tag">Bars: {currentGenre.bars}</span>
+              <span className="daw-composer-info-tag">Swing: {Math.round(currentGenre.swingAmount * 100)}%</span>
+              <span className="daw-composer-info-tag">
+                {currentGenre.useArpeggio ? '✓ Arpej' : '✗ Arpej'}
+              </span>
+              <span className="daw-composer-info-tag">Bass: {currentGenre.bassStyle}</span>
+            </div>
+          )}
+
+          <div className="daw-composer-actions">
+            <button
+              className="daw-btn daw-btn-primary daw-composer-generate-btn"
+              onClick={handleGenerate}
+              disabled={isGenerating}
+            >
+              {isGenerating ? (
+                <><span className="daw-spinner" /> Oluşturuluyor...</>
+              ) : (
+                <>🎲 Rastgele Oluştur</>
+              )}
+            </button>
+
+            {renderedBuffer && (
+              <>
+                <button className="daw-btn daw-composer-action-btn" onClick={handleReroll} title="Yeniden oluştur (aynı tarz)">
+                  🔄 Yenile
+                </button>
+                <button
+                  className={`daw-btn daw-composer-action-btn ${isPlaying ? 'active' : ''}`}
+                  onClick={handlePlay}
+                >
+                  {isPlaying ? '⏹ Durdur' : '▶ Önizle'}
+                </button>
+                <button
+                  className="daw-btn daw-btn-export daw-composer-action-btn"
+                  onClick={handleExport}
+                >
+                  📥 Timeline'a Ekle
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Visualizer */}
+        <div className="daw-composer-visualizer">
+          <canvas ref={canvasRef} className="daw-composer-canvas" />
+          {status && (
+            <div className="daw-composer-status">{status}</div>
+          )}
+          {!renderedBuffer && !isGenerating && (
+            <div className="daw-composer-empty">
+              <span className="daw-composer-empty-icon">{currentGenre?.emoji || '🎵'}</span>
+              <span>Bir tarz seç ve "Rastgele Oluştur" butonuna tıkla</span>
+            </div>
+          )}
+        </div>
+
+        {/* Song details */}
+        {generatedSong && (
+          <div className="daw-composer-details">
+            <div className="daw-composer-detail-card">
+              <div className="daw-composer-detail-icon">🥁</div>
+              <div className="daw-composer-detail-label">Davul</div>
+              <div className="daw-composer-detail-value">{generatedSong.drums.steps.size} enstrüman</div>
+            </div>
+            <div className="daw-composer-detail-card">
+              <div className="daw-composer-detail-icon">🎸</div>
+              <div className="daw-composer-detail-label">Bas</div>
+              <div className="daw-composer-detail-value">{generatedSong.bass.notes.length} nota</div>
+            </div>
+            <div className="daw-composer-detail-card">
+              <div className="daw-composer-detail-icon">🎹</div>
+              <div className="daw-composer-detail-label">Akor</div>
+              <div className="daw-composer-detail-value">{generatedSong.chords.notes.length} nota</div>
+            </div>
+            <div className="daw-composer-detail-card">
+              <div className="daw-composer-detail-icon">🎵</div>
+              <div className="daw-composer-detail-label">Melodi</div>
+              <div className="daw-composer-detail-value">{generatedSong.melody.notes.length} nota</div>
+            </div>
+            {generatedSong.arpeggio && (
+              <div className="daw-composer-detail-card">
+                <div className="daw-composer-detail-icon">✨</div>
+                <div className="daw-composer-detail-label">Arpej</div>
+                <div className="daw-composer-detail-value">{generatedSong.arpeggio.notes.length} nota</div>
+              </div>
+            )}
+            <div className="daw-composer-detail-card">
+              <div className="daw-composer-detail-icon">⏱</div>
+              <div className="daw-composer-detail-label">Tempo</div>
+              <div className="daw-composer-detail-value">{generatedSong.bpm} BPM</div>
+            </div>
+          </div>
+        )}
+
+        {/* History */}
+        {history.length > 0 && (
+          <div className="daw-composer-history">
+            <div className="daw-composer-history-title">Geçmiş Üretimler</div>
+            <div className="daw-composer-history-list">
+              {history.map((h, i) => (
+                <button
+                  key={i}
+                  className="daw-composer-history-item"
+                  onClick={() => onSongExport(h.buffer, h.name, h.bpm)}
+                  title="Timeline'a ekle"
+                >
+                  <span>{h.name}</span>
+                  <span className="daw-composer-history-add">+</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+})
+
+// ---- Genre accent colors ----
+function genreColor(id: string): string {
+  const map: Record<string, string> = {
+    trap: '#ef4444', lofi: '#a78bfa', house: '#10b981', techno: '#06b6d4',
+    drill: '#f97316', rnb: '#c084fc', edm: '#f43f5e', reggaeton: '#22d3ee',
+    ambient: '#818cf8', pop: '#f472b6', jazz: '#fbbf24', dnb: '#34d399',
+  }
+  return map[id] || '#6366f1'
+}
+
+DAWSmartComposer.displayName = 'DAWSmartComposer'
+export default DAWSmartComposer

@@ -23,8 +23,8 @@ export default function AudioStemEditor() {
   const [stems, setStems] = useState<StemEditorState>({
     vocals: {
       name: 'vocals',
-      label: '🎤 Vokal',
-      icon: '🎤',
+      label: 'Vokal',
+      icon: '',
       color: 'rgba(99, 102, 241, 0.3)',
       volume: 1,
       bass: 0,
@@ -34,8 +34,8 @@ export default function AudioStemEditor() {
     },
     music: {
       name: 'music',
-      label: '🎼 Müzik (Enstrümantal)',
-      icon: '🎼',
+      label: 'Müzik (Enstrümantal)',
+      icon: '',
       color: 'rgba(34, 197, 94, 0.3)',
       volume: 1,
       bass: 0,
@@ -79,7 +79,7 @@ export default function AudioStemEditor() {
             fontSize: '0.9rem'
           }}>
             {/* Waveform placeholder - gerçek waveform data eklenebilir */}
-            📊 Ses dalgası görüntüsü
+            Ses dalgası görüntüsü
           </div>
         </div>
         <div style={{ marginLeft: '1rem', display: 'flex', gap: '0.5rem' }}>
@@ -179,14 +179,14 @@ export default function AudioStemEditor() {
 
   return (
     <div className="component-container">
-      <h2>🎛️ Profesyonel Stem Editörü</h2>
+      <h2>Profesyonel Stem Editörü</h2>
       <p style={{ marginBottom: '2rem', color: '#888' }}>
         Ayrılan sesleri detaylı şekilde düzenleyin, eşitleyin ve temizleyin
       </p>
 
       {!separatedFile ? (
         <div className="card" style={{ padding: '3rem', textAlign: 'center', background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1))' }}>
-          <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>📁</div>
+          <div style={{ fontSize: '2rem', marginBottom: '1rem', opacity: 0.5 }}>+</div>
           <h3 style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>Ayrılmış Ses Dosyası Seç</h3>
           <p style={{ color: '#888', marginBottom: '2rem' }}>
             Önce "Ses Ayırma" kısmından bir dosya ayrıştırın, ardından buradan düzenleyin
@@ -215,7 +215,7 @@ export default function AudioStemEditor() {
         <>
           {/* Waveform ve Kontroller */}
           <div className="card" style={{ padding: '2rem', marginBottom: '2rem' }}>
-            <h3 style={{ marginBottom: '1.5rem', fontSize: '1.3rem' }}>📊 Ses Parçaları</h3>
+            <h3 style={{ marginBottom: '1.5rem', fontSize: '1.3rem' }}>Ses Parçaları</h3>
 
             {renderWaveform('vocals')}
             {renderWaveform('music')}
@@ -241,7 +241,7 @@ export default function AudioStemEditor() {
                   fontWeight: '600'
                 }}
               >
-                {playing ? '⏸️ Duraklat' : '▶️ Dinle'}
+                {playing ? 'Duraklat' : 'Dinle'}
               </button>
               <input
                 type="range"
@@ -259,7 +259,7 @@ export default function AudioStemEditor() {
 
           {/* EQ ve Effects */}
           <div className="card" style={{ padding: '2rem', marginBottom: '2rem' }}>
-            <h3 style={{ marginBottom: '1.5rem', fontSize: '1.3rem' }}>🎚️ Eşitleme & Efektler</h3>
+            <h3 style={{ marginBottom: '1.5rem', fontSize: '1.3rem' }}>Eşitleme & Efektler</h3>
 
             {['vocals', 'music'].map((stemKey) => (
               <div key={stemKey} style={{ marginBottom: '2rem', padding: '1.5rem', background: 'rgba(0, 0, 0, 0.2)', borderRadius: '8px' }}>
@@ -270,7 +270,7 @@ export default function AudioStemEditor() {
                 {/* Volume */}
                 <div style={{ marginBottom: '1rem' }}>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: '#aaa' }}>
-                    🔊 Ses Seviyesi: {Math.round(stems[stemKey as keyof StemEditorState].volume * 100)}%
+                    Ses Seviyesi: {Math.round(stems[stemKey as keyof StemEditorState].volume * 100)}%
                   </label>
                   <input
                     type="range"
@@ -286,7 +286,7 @@ export default function AudioStemEditor() {
                 {/* Bass */}
                 <div style={{ marginBottom: '1rem' }}>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: '#aaa' }}>
-                    🎸 Bass: {stems[stemKey as keyof StemEditorState].bass > 0 ? '+' : ''}{stems[stemKey as keyof StemEditorState].bass} dB
+                    Bass: {stems[stemKey as keyof StemEditorState].bass > 0 ? '+' : ''}{stems[stemKey as keyof StemEditorState].bass} dB
                   </label>
                   <input
                     type="range"
@@ -302,7 +302,7 @@ export default function AudioStemEditor() {
                 {/* Treble */}
                 <div>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: '#aaa' }}>
-                    ✨ Treble: {stems[stemKey as keyof StemEditorState].treble > 0 ? '+' : ''}{stems[stemKey as keyof StemEditorState].treble} dB
+                    Treble: {stems[stemKey as keyof StemEditorState].treble > 0 ? '+' : ''}{stems[stemKey as keyof StemEditorState].treble} dB
                   </label>
                   <input
                     type="range"
@@ -320,16 +320,16 @@ export default function AudioStemEditor() {
             {/* EQ Presets */}
             <div style={{ marginTop: '1.5rem' }}>
               <label style={{ display: 'block', marginBottom: '0.75rem', fontSize: '0.9rem', color: '#aaa', fontWeight: '600' }}>
-                ⭐ Hazır Presetler
+                Hazır Presetler
               </label>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.5rem' }}>
                 {[
-                  { id: 'vocal-boost', label: '🎤 Vokal Boost' },
-                  { id: 'vocal-clarity', label: '🎤 Vokal Clarity' },
-                  { id: 'vocal-warm', label: '🎤 Vokal Warm' },
-                  { id: 'music-bright', label: '🎼 Müzik Bright' },
-                  { id: 'music-warm', label: '🎼 Müzik Warm' },
-                  { id: 'music-bass-boost', label: '🎼 Bass Boost' }
+                  { id: 'vocal-boost', label: 'Vokal Boost' },
+                  { id: 'vocal-clarity', label: 'Vokal Clarity' },
+                  { id: 'vocal-warm', label: 'Vokal Warm' },
+                  { id: 'music-bright', label: 'Müzik Bright' },
+                  { id: 'music-warm', label: 'Müzik Warm' },
+                  { id: 'music-bass-boost', label: 'Bass Boost' }
                 ].map(preset => (
                   <button
                     key={preset.id}
@@ -354,7 +354,7 @@ export default function AudioStemEditor() {
 
           {/* Export Options */}
           <div className="card" style={{ padding: '2rem' }}>
-            <h3 style={{ marginBottom: '1.5rem', fontSize: '1.3rem' }}>💾 İndir</h3>
+            <h3 style={{ marginBottom: '1.5rem', fontSize: '1.3rem' }}>İndir</h3>
 
             {/* Stem Selection */}
             <div style={{ marginBottom: '1.5rem' }}>
@@ -393,7 +393,7 @@ export default function AudioStemEditor() {
                 transition: 'all 0.2s'
               }}
             >
-              {exporting ? '⏳ İndiriliyor...' : '📥 Seçili Parçaları İndir'}
+              {exporting ? 'İndiriliyor...' : 'Seçili Parçaları İndir'}
             </button>
           </div>
         </>

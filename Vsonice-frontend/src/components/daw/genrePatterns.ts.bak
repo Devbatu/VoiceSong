@@ -1,0 +1,1462 @@
+/* ============================================================
+   genrePatterns — Genre-aware random music generation engine
+   Generates coherent drum beats, bass lines, chord progs,
+   and melodies in specific musical styles using Web Audio
+   ============================================================ */
+
+// ---- Types ----
+export interface GenreDef {
+  id: string
+  name: string
+  emoji: string
+  bpmRange: [number, number]
+  timeSignature: [number, number]
+  swingAmount: number          // 0-1
+  bars: number                 // typical pattern length
+  drumPattern: DrumPatternGen
+  chordProgressions: number[][] // semitones from root, multiple options
+  scales: number[][]           // scale intervals (multiple options)
+  bassStyle: 'root' | 'walking' | 'octave' | 'arpeggio' | 'syncopated' | 'offbeat'
+  melodyDensity: number        // 0-1, chance of note per 16th
+  melodyRange: [number, number] // octave range offset from root
+  synthType: OscillatorType
+  padSynthType: OscillatorType
+  bassSynthType: OscillatorType
+  useArpeggio: boolean
+  arpeggioSpeed: number        // in 16th notes
+  reverbAmount: number         // 0-1 wet mix
+  delayTime: number            // seconds, 0 = off
+  filterFreq: number           // Hz, lowpass cutoff
+}
+
+export interface DrumPatternGen {
+  kick: number[]     // step indices (16th notes) with probability weights
+  snare: number[]
+  hihat: number[]
+  openhat: number[]
+  clap: number[]
+  tom: number[]
+  rim: number[]
+  perc: number[]
+  kickProb: number   // 0-1
+  snareProb: number
+  hihatProb: number
+  variation: number  // 0-1, chance of per-step mutation
+}
+
+export interface GeneratedSong {
+  bpm: number
+  bars: number
+  timeSignature: [number, number]
+  drums: GeneratedDrumTrack
+  bass: GeneratedNoteTrack
+  chords: GeneratedNoteTrack
+  melody: GeneratedNoteTrack
+  arpeggio: GeneratedNoteTrack | null
+}
+
+export interface GeneratedDrumTrack {
+  steps: Map<string, boolean[]>  // instrument → step active
+  velocities: Map<string, number[]>
+}
+
+export interface GeneratedNote {
+  pitch: number      // MIDI note
+  startBeat: number
+  durationBeats: number
+  velocity: number
+}
+
+export interface GeneratedNoteTrack {
+  notes: GeneratedNote[]
+}
+
+// ---- Utility ----
+const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)]
+const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min
+const prob = (p: number) => Math.random() < p
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
+
+// ---- Genre Definitions ----
+const GENRES: GenreDef[] = [
+  // ═════════════════════ TRAP ═════════════════════
+  {
+    id: 'trap', name: 'Trap', emoji: '🔥',
+    bpmRange: [130, 170], timeSignature: [4, 4], swingAmount: 0,
+    bars: 4,
+    drumPattern: {
+      kick: [0, 3, 6, 10, 14], snare: [4, 12],
+      hihat: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
+      openhat: [6, 14], clap: [4, 12], tom: [], rim: [2, 10], perc: [7],
+      kickProb: 0.7, snareProb: 0.9, hihatProb: 0.95, variation: 0.3,
+    },
+    chordProgressions: [
+      [0, 3, 5, 7],   // i-III-v-VII
+      [0, 5, 3, 7],   // i-v-III-VII
+      [0, 7, 5, 3],
+    ],
+    scales: [[0,2,3,5,7,8,10]], // natural minor
+    bassStyle: 'syncopated',
+    melodyDensity: 0.25, melodyRange: [0, 2],
+    synthType: 'square', padSynthType: 'sawtooth', bassSynthType: 'sawtooth',
+    useArpeggio: true, arpeggioSpeed: 2,
+    reverbAmount: 0.3, delayTime: 0.375, filterFreq: 2000,
+  },
+  // ═════════════════════ LO-FI HIP HOP ═════════════════════
+  {
+    id: 'lofi', name: 'Lo-Fi Hip Hop', emoji: '🎧',
+    bpmRange: [70, 90], timeSignature: [4, 4], swingAmount: 0.4,
+    bars: 4,
+    drumPattern: {
+      kick: [0, 5, 8, 13], snare: [4, 12],
+      hihat: [0,2,4,6,8,10,12,14], openhat: [14],
+      clap: [], tom: [], rim: [6, 10], perc: [3, 11],
+      kickProb: 0.8, snareProb: 0.85, hihatProb: 0.9, variation: 0.2,
+    },
+    chordProgressions: [
+      [0, 4, 5, 3],   // ii-V-I style jazz
+      [0, 5, 7, 3],
+      [0, 3, 5, 4],
+    ],
+    scales: [[0,2,3,5,7,9,10]], // dorian
+    bassStyle: 'walking',
+    melodyDensity: 0.15, melodyRange: [0, 1],
+    synthType: 'sine', padSynthType: 'triangle', bassSynthType: 'triangle',
+    useArpeggio: false, arpeggioSpeed: 4,
+    reverbAmount: 0.5, delayTime: 0, filterFreq: 1200,
+  },
+  // ═════════════════════ HOUSE ═════════════════════
+  {
+    id: 'house', name: 'House', emoji: '🏠',
+    bpmRange: [120, 130], timeSignature: [4, 4], swingAmount: 0.05,
+    bars: 4,
+    drumPattern: {
+      kick: [0, 4, 8, 12], snare: [],
+      hihat: [2,6,10,14], openhat: [6, 14],
+      clap: [4, 12], tom: [], rim: [], perc: [1, 5, 9, 13],
+      kickProb: 0.95, snareProb: 0, hihatProb: 0.9, variation: 0.15,
+    },
+    chordProgressions: [
+      [0, 5, 7, 3],
+      [0, 3, 5, 7],
+      [0, 7, 3, 5],
+    ],
+    scales: [[0,2,4,5,7,9,11]], // major
+    bassStyle: 'offbeat',
+    melodyDensity: 0.2, melodyRange: [0, 2],
+    synthType: 'sawtooth', padSynthType: 'sawtooth', bassSynthType: 'square',
+    useArpeggio: true, arpeggioSpeed: 3,
+    reverbAmount: 0.35, delayTime: 0.25, filterFreq: 3500,
+  },
+  // ═════════════════════ TECHNO ═════════════════════
+  {
+    id: 'techno', name: 'Techno', emoji: '⚡',
+    bpmRange: [125, 145], timeSignature: [4, 4], swingAmount: 0,
+    bars: 4,
+    drumPattern: {
+      kick: [0, 4, 8, 12], snare: [],
+      hihat: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
+      openhat: [4, 12], clap: [4, 12],
+      tom: [6, 7, 14, 15], rim: [2, 10], perc: [0, 3, 8, 11],
+      kickProb: 0.98, snareProb: 0, hihatProb: 0.85, variation: 0.2,
+    },
+    chordProgressions: [
+      [0, 0, 5, 5],
+      [0, 3, 0, 5],
+      [0, 7, 5, 3],
+    ],
+    scales: [[0,2,3,5,7,8,10]], // minor
+    bassStyle: 'root',
+    melodyDensity: 0.1, melodyRange: [-1, 1],
+    synthType: 'sawtooth', padSynthType: 'square', bassSynthType: 'sawtooth',
+    useArpeggio: true, arpeggioSpeed: 1,
+    reverbAmount: 0.4, delayTime: 0.166, filterFreq: 2500,
+  },
+  // ═════════════════════ DRILL ═════════════════════
+  {
+    id: 'drill', name: 'Drill', emoji: '🗡️',
+    bpmRange: [138, 148], timeSignature: [4, 4], swingAmount: 0,
+    bars: 4,
+    drumPattern: {
+      kick: [0, 3, 7, 8, 11], snare: [4, 12],
+      hihat: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
+      openhat: [6], clap: [4, 12],
+      tom: [], rim: [3, 7, 11, 15], perc: [5, 13],
+      kickProb: 0.75, snareProb: 0.9, hihatProb: 0.92, variation: 0.35,
+    },
+    chordProgressions: [
+      [0, 3, 7, 5],
+      [0, 5, 3, 7],
+    ],
+    scales: [[0,1,3,5,7,8,10]], // phrygian
+    bassStyle: 'syncopated',
+    melodyDensity: 0.2, melodyRange: [0, 2],
+    synthType: 'square', padSynthType: 'sawtooth', bassSynthType: 'sawtooth',
+    useArpeggio: true, arpeggioSpeed: 2,
+    reverbAmount: 0.25, delayTime: 0.333, filterFreq: 1800,
+  },
+  // ═════════════════════ R&B ═════════════════════
+  {
+    id: 'rnb', name: 'R&B / Soul', emoji: '💜',
+    bpmRange: [65, 85], timeSignature: [4, 4], swingAmount: 0.3,
+    bars: 4,
+    drumPattern: {
+      kick: [0, 6, 8, 10], snare: [4, 12],
+      hihat: [0,2,4,6,8,10,12,14], openhat: [],
+      clap: [], tom: [], rim: [2, 10, 14], perc: [7],
+      kickProb: 0.8, snareProb: 0.85, hihatProb: 0.9, variation: 0.2,
+    },
+    chordProgressions: [
+      [0, 4, 5, 3],   // jazz-ish ii-V-I-vi
+      [0, 5, 3, 4],
+      [0, 2, 5, 4],
+    ],
+    scales: [[0,2,4,5,7,9,11]], // major
+    bassStyle: 'walking',
+    melodyDensity: 0.2, melodyRange: [0, 2],
+    synthType: 'sine', padSynthType: 'triangle', bassSynthType: 'sine',
+    useArpeggio: false, arpeggioSpeed: 4,
+    reverbAmount: 0.45, delayTime: 0, filterFreq: 2000,
+  },
+  // ═════════════════════ EDM / FUTURE BASS ═════════════════════
+  {
+    id: 'edm', name: 'EDM / Future Bass', emoji: '🎆',
+    bpmRange: [140, 160], timeSignature: [4, 4], swingAmount: 0,
+    bars: 4,
+    drumPattern: {
+      kick: [0, 8], snare: [4, 12],
+      hihat: [0,2,4,6,8,10,12,14], openhat: [4, 12],
+      clap: [4, 12], tom: [14, 15], rim: [], perc: [1, 5, 9, 13],
+      kickProb: 0.9, snareProb: 0.9, hihatProb: 0.85, variation: 0.25,
+    },
+    chordProgressions: [
+      [0, 5, 7, 3],
+      [0, 3, 7, 5],
+      [0, 5, 3, 7],
+    ],
+    scales: [[0,2,4,5,7,9,11]], // major
+    bassStyle: 'arpeggio',
+    melodyDensity: 0.3, melodyRange: [0, 2],
+    synthType: 'sawtooth', padSynthType: 'sawtooth', bassSynthType: 'square',
+    useArpeggio: true, arpeggioSpeed: 2,
+    reverbAmount: 0.4, delayTime: 0.25, filterFreq: 4000,
+  },
+  // ═════════════════════ REGGAETON ═════════════════════
+  {
+    id: 'reggaeton', name: 'Reggaeton', emoji: '🌴',
+    bpmRange: [88, 100], timeSignature: [4, 4], swingAmount: 0,
+    bars: 4,
+    drumPattern: {
+      kick: [0, 3, 4, 7, 8, 11, 12, 15], snare: [3, 7, 11, 15],
+      hihat: [0,2,4,6,8,10,12,14], openhat: [],
+      clap: [4, 12], tom: [], rim: [1, 5, 9, 13], perc: [],
+      kickProb: 0.85, snareProb: 0.8, hihatProb: 0.9, variation: 0.15,
+    },
+    chordProgressions: [
+      [0, 3, 5, 7],
+      [0, 5, 3, 7],
+    ],
+    scales: [[0,2,3,5,7,8,10]], // minor
+    bassStyle: 'root',
+    melodyDensity: 0.2, melodyRange: [0, 1],
+    synthType: 'square', padSynthType: 'triangle', bassSynthType: 'sine',
+    useArpeggio: false, arpeggioSpeed: 4,
+    reverbAmount: 0.2, delayTime: 0, filterFreq: 2500,
+  },
+  // ═════════════════════ AMBIENT ═════════════════════
+  {
+    id: 'ambient', name: 'Ambient', emoji: '🌊',
+    bpmRange: [60, 80], timeSignature: [4, 4], swingAmount: 0,
+    bars: 8,
+    drumPattern: {
+      kick: [], snare: [],
+      hihat: [], openhat: [],
+      clap: [], tom: [], rim: [0, 8], perc: [4, 12],
+      kickProb: 0, snareProb: 0, hihatProb: 0, variation: 0.1,
+    },
+    chordProgressions: [
+      [0, 7, 5, 0],
+      [0, 5, 0, 7],
+      [0, 2, 5, 7],
+    ],
+    scales: [[0,2,4,7,9]], // pentatonic
+    bassStyle: 'root',
+    melodyDensity: 0.08, melodyRange: [0, 2],
+    synthType: 'sine', padSynthType: 'sine', bassSynthType: 'sine',
+    useArpeggio: true, arpeggioSpeed: 4,
+    reverbAmount: 0.8, delayTime: 0.5, filterFreq: 1500,
+  },
+  // ═════════════════════ POP ═════════════════════
+  {
+    id: 'pop', name: 'Pop', emoji: '🎤',
+    bpmRange: [100, 130], timeSignature: [4, 4], swingAmount: 0.05,
+    bars: 4,
+    drumPattern: {
+      kick: [0, 8], snare: [4, 12],
+      hihat: [0,2,4,6,8,10,12,14], openhat: [],
+      clap: [4, 12], tom: [], rim: [], perc: [6, 14],
+      kickProb: 0.9, snareProb: 0.9, hihatProb: 0.88, variation: 0.15,
+    },
+    chordProgressions: [
+      [0, 5, 3, 4],   // I-V-vi-IV
+      [0, 4, 5, 3],
+      [0, 3, 4, 5],
+    ],
+    scales: [[0,2,4,5,7,9,11]], // major
+    bassStyle: 'root',
+    melodyDensity: 0.25, melodyRange: [0, 2],
+    synthType: 'triangle', padSynthType: 'sawtooth', bassSynthType: 'sine',
+    useArpeggio: false, arpeggioSpeed: 4,
+    reverbAmount: 0.3, delayTime: 0.2, filterFreq: 3000,
+  },
+  // ═════════════════════ JAZZ ═════════════════════
+  {
+    id: 'jazz', name: 'Jazz', emoji: '🎷',
+    bpmRange: [100, 140], timeSignature: [4, 4], swingAmount: 0.5,
+    bars: 4,
+    drumPattern: {
+      kick: [0, 10], snare: [],
+      hihat: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
+      openhat: [], clap: [],
+      tom: [], rim: [4, 12], perc: [2, 6, 10, 14],
+      kickProb: 0.5, snareProb: 0, hihatProb: 0.95, variation: 0.4,
+    },
+    chordProgressions: [
+      [0, 5, 2, 5],   // ii-V-I jazz standard variants
+      [0, 4, 2, 5],
+      [0, 1, 4, 5],
+    ],
+    scales: [[0,2,3,5,7,9,10]], // dorian
+    bassStyle: 'walking',
+    melodyDensity: 0.3, melodyRange: [0, 2],
+    synthType: 'sine', padSynthType: 'triangle', bassSynthType: 'sine',
+    useArpeggio: false, arpeggioSpeed: 4,
+    reverbAmount: 0.45, delayTime: 0, filterFreq: 3500,
+  },
+  // ═════════════════════ DRUM & BASS ═════════════════════
+  {
+    id: 'dnb', name: 'Drum & Bass', emoji: '🥁',
+    bpmRange: [170, 180], timeSignature: [4, 4], swingAmount: 0,
+    bars: 4,
+    drumPattern: {
+      kick: [0, 10], snare: [4, 12],
+      hihat: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
+      openhat: [6, 14], clap: [],
+      tom: [3, 7, 11, 15], rim: [], perc: [1, 5, 9, 13],
+      kickProb: 0.7, snareProb: 0.9, hihatProb: 0.92, variation: 0.35,
+    },
+    chordProgressions: [
+      [0, 5, 3, 7],
+      [0, 3, 7, 5],
+    ],
+    scales: [[0,2,3,5,7,8,10]], // minor
+    bassStyle: 'syncopated',
+    melodyDensity: 0.15, melodyRange: [0, 1],
+    synthType: 'sawtooth', padSynthType: 'square', bassSynthType: 'sawtooth',
+    useArpeggio: false, arpeggioSpeed: 2,
+    reverbAmount: 0.2, delayTime: 0.125, filterFreq: 3000,
+  },
+]
+
+export function getGenres(): GenreDef[] { return GENRES }
+export function getGenre(id: string): GenreDef | undefined { return GENRES.find(g => g.id === id) }
+
+// ---- Core generation ----
+
+/** Generate a drum pattern for one bar (16 steps) */
+function generateDrumBar(genre: GenreDef): GeneratedDrumTrack {
+  const instruments = ['kick','snare','hihat','openhat','clap','tom','rim','perc'] as const
+  const steps = new Map<string, boolean[]>()
+  const velocities = new Map<string, number[]>()
+
+  const pat = genre.drumPattern
+  const probMap: Record<string, number> = {
+    kick: pat.kickProb, snare: pat.snareProb, hihat: pat.hihatProb,
+    openhat: 0.7, clap: 0.8, tom: 0.6, rim: 0.7, perc: 0.65,
+  }
+
+  for (const inst of instruments) {
+    const baseSteps = pat[inst]
+    const active = new Array(16).fill(false)
+    const vel = new Array(16).fill(0)
+    const p = probMap[inst] || 0.7
+
+    for (const s of baseSteps) {
+      if (prob(p)) {
+        active[s] = true
+        vel[s] = rand(80, 120)
+      }
+    }
+
+    // Add variation / ghost notes
+    for (let i = 0; i < 16; i++) {
+      if (!active[i] && prob(pat.variation * 0.3)) {
+        active[i] = true
+        vel[i] = rand(40, 70) // ghost note
+      }
+      // Remove some notes for variation
+      if (active[i] && prob(pat.variation * 0.15)) {
+        active[i] = false
+        vel[i] = 0
+      }
+    }
+
+    steps.set(inst, active)
+    velocities.set(inst, vel)
+  }
+
+  return { steps, velocities }
+}
+
+/** Extend a single bar drum pattern across multiple bars with variation */
+function generateDrumTrack(genre: GenreDef): GeneratedDrumTrack {
+  const totalSteps = genre.bars * 16
+  const instruments = ['kick','snare','hihat','openhat','clap','tom','rim','perc']
+  const allSteps = new Map<string, boolean[]>()
+  const allVels = new Map<string, number[]>()
+
+  for (const inst of instruments) {
+    allSteps.set(inst, [])
+    allVels.set(inst, [])
+  }
+
+  // Generate base bar
+  const base = generateDrumBar(genre)
+
+  for (let bar = 0; bar < genre.bars; bar++) {
+    // Use base pattern but mutate slightly for later bars
+    const barData = bar === 0 ? base : generateDrumBar(genre)
+
+    for (const inst of instruments) {
+      const bSteps = barData.steps.get(inst) || new Array(16).fill(false)
+      const bVels = barData.velocities.get(inst) || new Array(16).fill(0)
+
+      // For the last bar, add fills
+      if (bar === genre.bars - 1) {
+        if (inst === 'tom' || inst === 'snare') {
+          for (let s = 12; s < 16; s++) {
+            if (prob(0.6)) {
+              bSteps[s] = true
+              bVels[s] = rand(90, 127)
+            }
+          }
+        }
+      }
+
+      allSteps.get(inst)!.push(...bSteps)
+      allVels.get(inst)!.push(...bVels)
+    }
+  }
+
+  return { steps: allSteps, velocities: allVels }
+}
+
+/** Get chord notes (MIDI) from semitone offset + root — proper interval voicing */
+function chordToMidi(root: number, semitone: number, scale: number[]): number[] {
+  const chordRoot = root + semitone
+  const notes = [chordRoot]
+  const scaleSet = new Set(scale.map(s => s % 12))
+  const rootPc = semitone % 12
+
+  // Major 3rd (4) or minor 3rd (3)
+  const maj3pc = (rootPc + 4) % 12
+  const min3pc = (rootPc + 3) % 12
+  if (scaleSet.has(maj3pc)) notes.push(chordRoot + 4)
+  else if (scaleSet.has(min3pc)) notes.push(chordRoot + 3)
+
+  // Perfect 5th (7 semitones)
+  const p5pc = (rootPc + 7) % 12
+  if (scaleSet.has(p5pc)) notes.push(chordRoot + 7)
+
+  // Occasionally add 7th for richness
+  if (prob(0.5)) {
+    const min7pc = (rootPc + 10) % 12
+    const maj7pc = (rootPc + 11) % 12
+    if (scaleSet.has(min7pc)) notes.push(chordRoot + 10)
+    else if (scaleSet.has(maj7pc)) notes.push(chordRoot + 11)
+  }
+
+  // Occasionally add 9th (2 semitones = octave + 2)
+  if (prob(0.25)) {
+    const ninth = (rootPc + 2) % 12
+    if (scaleSet.has(ninth)) notes.push(chordRoot + 14)
+  }
+
+  return notes
+}
+
+/** Generate chord progression track */
+function generateChords(genre: GenreDef, rootNote: number): GeneratedNoteTrack {
+  const notes: GeneratedNote[] = []
+  const progression = pick(genre.chordProgressions)
+  const scale = pick(genre.scales)
+  const beatsPerBar = genre.timeSignature[0]
+
+  for (let bar = 0; bar < genre.bars; bar++) {
+    const chordIdx = bar % progression.length
+    const semitone = progression[chordIdx]
+    const chordNotes = chordToMidi(rootNote + 48, semitone, scale) // octave 4
+
+    // Chord rhythm varies by genre
+    const startBeat = bar * beatsPerBar
+    const noteDur = beatsPerBar * (prob(0.3) ? 0.5 : 1)
+
+    for (const pitch of chordNotes) {
+      notes.push({
+        pitch: clamp(pitch, 36, 96),
+        startBeat,
+        durationBeats: noteDur,
+        velocity: rand(60, 90),
+      })
+    }
+
+    // Some genres add a second chord hit mid-bar
+    if (prob(0.4) && noteDur < beatsPerBar) {
+      for (const pitch of chordNotes) {
+        notes.push({
+          pitch: clamp(pitch, 36, 96),
+          startBeat: startBeat + beatsPerBar / 2,
+          durationBeats: beatsPerBar / 2,
+          velocity: rand(50, 75),
+        })
+      }
+    }
+  }
+
+  return { notes }
+}
+
+/** Generate bass line */
+function generateBass(genre: GenreDef, rootNote: number): GeneratedNoteTrack {
+  const notes: GeneratedNote[] = []
+  const progression = pick(genre.chordProgressions)
+  const scale = pick(genre.scales)
+  const beatsPerBar = genre.timeSignature[0]
+  const bassOctave = rootNote + 36 // octave 2
+
+  for (let bar = 0; bar < genre.bars; bar++) {
+    const chordSemitone = progression[bar % progression.length]
+    const bassRoot = bassOctave + chordSemitone
+
+    switch (genre.bassStyle) {
+      case 'root': {
+        // Simple root notes
+        notes.push({ pitch: bassRoot, startBeat: bar * beatsPerBar, durationBeats: beatsPerBar, velocity: rand(85, 110) })
+        break
+      }
+      case 'octave': {
+        notes.push({ pitch: bassRoot, startBeat: bar * beatsPerBar, durationBeats: beatsPerBar / 2, velocity: rand(90, 110) })
+        notes.push({ pitch: bassRoot + 12, startBeat: bar * beatsPerBar + beatsPerBar / 2, durationBeats: beatsPerBar / 2, velocity: rand(75, 95) })
+        break
+      }
+      case 'walking': {
+        // Walking bass — scale-wise motion
+        const stepDur = beatsPerBar / 4
+        for (let s = 0; s < 4; s++) {
+          const scaleIdx = s % scale.length
+          const offset = scale[scaleIdx]
+          const pitch = clamp(bassRoot + offset, 28, 72)
+          notes.push({
+            pitch,
+            startBeat: bar * beatsPerBar + s * stepDur,
+            durationBeats: stepDur * 0.9,
+            velocity: rand(75, 100),
+          })
+        }
+        break
+      }
+      case 'arpeggio': {
+        const stepDur = beatsPerBar / 4
+        const arpNotes = [0, scale[2] || 4, scale[4] || 7, scale[2] || 4]
+        for (let s = 0; s < 4; s++) {
+          notes.push({
+            pitch: clamp(bassRoot + arpNotes[s], 28, 72),
+            startBeat: bar * beatsPerBar + s * stepDur,
+            durationBeats: stepDur * 0.8,
+            velocity: rand(80, 105),
+          })
+        }
+        break
+      }
+      case 'syncopated': {
+        // Off-beat syncopated pattern
+        const hits = [0, 0.75, 1.5, 2.5, 3]
+        for (const h of hits) {
+          if (prob(0.75)) {
+            notes.push({
+              pitch: clamp(bassRoot + (prob(0.3) ? pick(scale.slice(0,3)) : 0), 28, 72),
+              startBeat: bar * beatsPerBar + h,
+              durationBeats: 0.5,
+              velocity: rand(85, 115),
+            })
+          }
+        }
+        break
+      }
+      case 'offbeat': {
+        // Offbeat pumping bass (house style)
+        for (let s = 0; s < 4; s++) {
+          notes.push({
+            pitch: bassRoot,
+            startBeat: bar * beatsPerBar + s + 0.5,
+            durationBeats: 0.4,
+            velocity: rand(80, 100),
+          })
+        }
+        break
+      }
+    }
+  }
+
+  return { notes }
+}
+
+/** Generate melody */
+function generateMelody(genre: GenreDef, rootNote: number): GeneratedNoteTrack {
+  const notes: GeneratedNote[] = []
+  const scale = pick(genre.scales)
+  const beatsPerBar = genre.timeSignature[0]
+  const totalBeats = genre.bars * beatsPerBar
+  const stepSize = 0.25 // 16th note resolution
+  const melodyBase = rootNote + 60 + genre.melodyRange[0] * 12
+
+  let prevPitch = melodyBase + pick(scale)
+  let restCounter = 0
+
+  for (let b = 0; b < totalBeats; b += stepSize) {
+    // Density-based note placement
+    if (!prob(genre.melodyDensity)) {
+      restCounter++
+      continue
+    }
+
+    // Pick scale note near previous note (stepwise/skip motion)
+    const direction = prob(0.5) ? 1 : -1
+    const stepJump = prob(0.7) ? 1 : prob(0.5) ? 2 : 3
+    let newScaleIdx = 0
+
+    // Find current position in scale
+    const currentDeg = scale.findIndex(s => (prevPitch - rootNote) % 12 === s)
+    if (currentDeg >= 0) {
+      newScaleIdx = (currentDeg + direction * stepJump + scale.length * 4) % scale.length
+    } else {
+      newScaleIdx = rand(0, scale.length - 1)
+    }
+
+    const octaveShift = clamp(
+      Math.floor((prevPitch - melodyBase) / 12) + (prob(0.1) ? direction : 0),
+      genre.melodyRange[0], genre.melodyRange[1]
+    )
+    const newPitch = clamp(melodyBase + octaveShift * 12 + scale[newScaleIdx], 48, 96)
+
+    // Duration based on context
+    const durOptions = [0.25, 0.5, 1, 1.5, 2]
+    const durWeights = restCounter > 3 ? [0.1, 0.2, 0.4, 0.2, 0.1] : [0.3, 0.4, 0.2, 0.08, 0.02]
+    let dur = 0.25
+    const r = Math.random()
+    let cumProb = 0
+    for (let i = 0; i < durOptions.length; i++) {
+      cumProb += durWeights[i]
+      if (r < cumProb) { dur = durOptions[i]; break }
+    }
+
+    // Ensure note doesn't exceed pattern
+    dur = Math.min(dur, totalBeats - b)
+
+    notes.push({
+      pitch: newPitch,
+      startBeat: b,
+      durationBeats: dur,
+      velocity: rand(70, 110),
+    })
+
+    prevPitch = newPitch
+    restCounter = 0
+    b += dur - stepSize // skip ahead by note duration
+  }
+
+  return { notes }
+}
+
+/** Generate arpeggio pattern */
+function generateArpeggio(genre: GenreDef, rootNote: number): GeneratedNoteTrack | null {
+  if (!genre.useArpeggio) return null
+
+  const notes: GeneratedNote[] = []
+  const progression = pick(genre.chordProgressions)
+  const scale = pick(genre.scales)
+  const beatsPerBar = genre.timeSignature[0]
+  const arpStep = genre.arpeggioSpeed * 0.25 // convert 16ths to beats
+  const arpOctave = rootNote + 60
+
+  for (let bar = 0; bar < genre.bars; bar++) {
+    const semitone = progression[bar % progression.length]
+    // Build arp notes from chord tones
+    const chordTones = [0, scale[2] || 3, scale[4] || 7]
+    const arpPattern = [...chordTones, chordTones[1], ...chordTones.map(c => c + 12), chordTones[1] + 12]
+
+    let arpIdx = 0
+    for (let b = 0; b < beatsPerBar; b += arpStep) {
+      const pitch = clamp(arpOctave + semitone + arpPattern[arpIdx % arpPattern.length], 48, 96)
+      notes.push({
+        pitch,
+        startBeat: bar * beatsPerBar + b,
+        durationBeats: arpStep * 0.8,
+        velocity: rand(60, 90),
+      })
+      arpIdx++
+    }
+  }
+
+  return { notes }
+}
+
+// ---- Main generate function ----
+export function generateSong(genreId: string, rootNote: number = 0): GeneratedSong {
+  const genre = getGenre(genreId)
+  if (!genre) throw new Error(`Unknown genre: ${genreId}`)
+
+  const bpm = rand(genre.bpmRange[0], genre.bpmRange[1])
+
+  return {
+    bpm,
+    bars: genre.bars,
+    timeSignature: genre.timeSignature,
+    drums: generateDrumTrack(genre),
+    bass: generateBass(genre, rootNote),
+    chords: generateChords(genre, rootNote),
+    melody: generateMelody(genre, rootNote),
+    arpeggio: generateArpeggio(genre, rootNote),
+  }
+}
+
+// ======================================================================
+//  PROFESSIONAL AUDIO RENDERING ENGINE
+//  — Layered drum synthesis, detuned unison synths, 
+//    proper ADSR, reverb, delay, compression, saturation
+// ======================================================================
+
+/** Soft-clip saturation for analogue warmth */
+function makeSatCurve(drive: number): Float32Array {
+  const n = 8192
+  const c = new Float32Array(n)
+  for (let i = 0; i < n; i++) {
+    const x = (i * 2) / n - 1
+    c[i] = Math.tanh(x * drive)
+  }
+  return c
+}
+
+/** Realistic reverb impulse response with early reflections + late tail */
+function buildReverbIR(ctx: OfflineAudioContext, sr: number, reverbTime: number): AudioBuffer {
+  const len = Math.ceil(sr * reverbTime)
+  const buf = ctx.createBuffer(2, len, sr)
+
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch)
+    const pre = Math.ceil(sr * 0.015)
+
+    // Early reflections — sparse taps give a sense of space
+    const taps: [number, number][] = [
+      [0.011, 0.72], [0.019, 0.58], [0.026, 0.47],
+      [0.035, 0.38], [0.047, 0.30], [0.062, 0.23],
+      [0.079, 0.18], [0.098, 0.13],
+    ]
+    for (const [tapT, amp] of taps) {
+      const idx = Math.floor(tapT * sr) + pre
+      for (let j = 0; j < 48; j++) {
+        if (idx + j < len) d[idx + j] += (Math.random() * 2 - 1) * amp * Math.exp(-j / 20)
+      }
+    }
+
+    // Late reverb — frequency-dependent decay
+    const late = Math.ceil(sr * 0.1)
+    for (let i = late; i < len; i++) {
+      const t = (i - late) / sr
+      const lo = Math.exp(-t * 2.8 / reverbTime) * 0.38
+      const hi = Math.exp(-t * 6.5 / reverbTime) * 0.18
+      d[i] += (Math.random() * 2 - 1) * lo + (Math.random() * 2 - 1) * hi
+    }
+
+    // Normalize
+    let pk = 0
+    for (let i = 0; i < len; i++) pk = Math.max(pk, Math.abs(d[i]))
+    if (pk > 0) for (let i = 0; i < len; i++) d[i] /= pk
+  }
+
+  return buf
+}
+
+// ---- Pre-rendered drum samples via mini-OfflineAudioContexts ----
+
+async function synthKick(sr: number): Promise<AudioBuffer> {
+  const dur = 0.55
+  const ctx = new OfflineAudioContext(1, Math.ceil(sr * dur), sr)
+
+  // Body — sine with pitch sweep 165→55→38 Hz
+  const body = ctx.createOscillator()
+  body.type = 'sine'
+  body.frequency.setValueAtTime(165, 0)
+  body.frequency.exponentialRampToValueAtTime(55, 0.035)
+  body.frequency.exponentialRampToValueAtTime(38, 0.18)
+  const bodyE = ctx.createGain()
+  bodyE.gain.setValueAtTime(1.0, 0)
+  bodyE.gain.setValueAtTime(0.85, 0.04)
+  bodyE.gain.exponentialRampToValueAtTime(0.001, 0.5)
+  body.connect(bodyE)
+
+  // Sub reinforcement — pure 40 Hz sine
+  const sub = ctx.createOscillator()
+  sub.type = 'sine'
+  sub.frequency.value = 40
+  const subE = ctx.createGain()
+  subE.gain.setValueAtTime(0.45, 0)
+  subE.gain.exponentialRampToValueAtTime(0.001, 0.4)
+  sub.connect(subE)
+
+  // Click — short noise burst through HP for attack transient
+  const nBuf = ctx.createBuffer(1, Math.ceil(sr * 0.02), sr)
+  const nd = nBuf.getChannelData(0)
+  for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (sr * 0.001))
+  const click = ctx.createBufferSource()
+  click.buffer = nBuf
+  const hp = ctx.createBiquadFilter()
+  hp.type = 'highpass'
+  hp.frequency.value = 3800
+  const clkG = ctx.createGain()
+  clkG.gain.value = 0.5
+  click.connect(hp)
+  hp.connect(clkG)
+
+  // Drive + mix
+  const sat = ctx.createWaveShaper()
+  sat.curve = makeSatCurve(2.0)
+  sat.oversample = '2x'
+  const out = ctx.createGain()
+  out.gain.value = 0.82
+  bodyE.connect(sat)
+  subE.connect(sat)
+  clkG.connect(sat)
+  sat.connect(out)
+  out.connect(ctx.destination)
+
+  body.start(0); body.stop(dur)
+  sub.start(0); sub.stop(dur)
+  click.start(0)
+  return ctx.startRendering()
+}
+
+async function synthSnare(sr: number): Promise<AudioBuffer> {
+  const dur = 0.28
+  const ctx = new OfflineAudioContext(1, Math.ceil(sr * dur), sr)
+
+  // Body — sine with pitch sweep
+  const body = ctx.createOscillator()
+  body.type = 'sine'
+  body.frequency.setValueAtTime(260, 0)
+  body.frequency.exponentialRampToValueAtTime(140, 0.018)
+  body.frequency.exponentialRampToValueAtTime(100, 0.08)
+  const bodyE = ctx.createGain()
+  bodyE.gain.setValueAtTime(0.82, 0)
+  bodyE.gain.exponentialRampToValueAtTime(0.001, 0.18)
+  body.connect(bodyE)
+
+  // Noise crack — bandpass ~4.5 kHz
+  const nLen = Math.ceil(sr * dur)
+  const nBuf = ctx.createBuffer(1, nLen, sr)
+  const nd = nBuf.getChannelData(0)
+  for (let i = 0; i < nLen; i++) nd[i] = Math.random() * 2 - 1
+  const noiseA = ctx.createBufferSource()
+  noiseA.buffer = nBuf
+  const bp = ctx.createBiquadFilter()
+  bp.type = 'bandpass'
+  bp.frequency.value = 4500
+  bp.Q.value = 0.9
+  const nE = ctx.createGain()
+  nE.gain.setValueAtTime(0.72, 0)
+  nE.gain.exponentialRampToValueAtTime(0.001, 0.22)
+  noiseA.connect(bp)
+  bp.connect(nE)
+
+  // High sizzle — HP > 7 kHz
+  const nBuf2 = ctx.createBuffer(1, nLen, sr)
+  const nd2 = nBuf2.getChannelData(0)
+  for (let i = 0; i < nLen; i++) nd2[i] = Math.random() * 2 - 1
+  const noiseB = ctx.createBufferSource()
+  noiseB.buffer = nBuf2
+  const hiP = ctx.createBiquadFilter()
+  hiP.type = 'highpass'
+  hiP.frequency.value = 7200
+  const sE = ctx.createGain()
+  sE.gain.setValueAtTime(0.32, 0)
+  sE.gain.exponentialRampToValueAtTime(0.001, 0.12)
+  noiseB.connect(hiP)
+  hiP.connect(sE)
+
+  const mix = ctx.createGain()
+  mix.gain.value = 0.78
+  bodyE.connect(mix)
+  nE.connect(mix)
+  sE.connect(mix)
+  mix.connect(ctx.destination)
+
+  body.start(0); body.stop(dur)
+  noiseA.start(0); noiseB.start(0)
+  return ctx.startRendering()
+}
+
+async function synthHihat(sr: number, open: boolean): Promise<AudioBuffer> {
+  const dur = open ? 0.35 : 0.06
+  const ctx = new OfflineAudioContext(1, Math.ceil(sr * dur), sr)
+
+  // 6 metallic square-wave partials at inharmonic frequencies
+  const freqs = [1047, 1175, 1397, 1568, 2093, 2637]
+  const hp = ctx.createBiquadFilter()
+  hp.type = 'highpass'
+  hp.frequency.value = open ? 6200 : 7500
+  hp.Q.value = open ? 0.4 : 0.6
+
+  for (const f of freqs) {
+    const osc = ctx.createOscillator()
+    osc.type = 'square'
+    osc.frequency.value = f * (0.97 + Math.random() * 0.06)
+    osc.connect(hp)
+    osc.start(0)
+    osc.stop(dur)
+  }
+
+  const env = ctx.createGain()
+  env.gain.setValueAtTime(open ? 0.22 : 0.28, 0)
+  env.gain.exponentialRampToValueAtTime(0.001, open ? 0.3 : 0.045)
+  hp.connect(env)
+  env.connect(ctx.destination)
+
+  return ctx.startRendering()
+}
+
+async function synthClap(sr: number): Promise<AudioBuffer> {
+  const dur = 0.32
+  const ctx = new OfflineAudioContext(1, Math.ceil(sr * dur), sr)
+
+  const bp = ctx.createBiquadFilter()
+  bp.type = 'bandpass'
+  bp.frequency.value = 2500
+  bp.Q.value = 0.6
+
+  // 4 micro-delayed noise bursts for realistic clap
+  const delays = [0, 0.007, 0.013, 0.021]
+  for (const d of delays) {
+    const nL = Math.ceil(sr * 0.012)
+    const nB = ctx.createBuffer(1, nL, sr)
+    const nD = nB.getChannelData(0)
+    for (let i = 0; i < nL; i++) nD[i] = (Math.random() * 2 - 1) * Math.exp(-i / (sr * 0.003))
+    const s = ctx.createBufferSource()
+    s.buffer = nB
+    s.connect(bp)
+    s.start(d)
+  }
+
+  // Tail noise
+  const tBuf = ctx.createBuffer(1, Math.ceil(sr * dur), sr)
+  const tD = tBuf.getChannelData(0)
+  for (let i = 0; i < tD.length; i++) tD[i] = Math.random() * 2 - 1
+  const tail = ctx.createBufferSource()
+  tail.buffer = tBuf
+  const tailE = ctx.createGain()
+  tailE.gain.setValueAtTime(0.5, 0.025)
+  tailE.gain.exponentialRampToValueAtTime(0.001, 0.28)
+  tail.connect(bp)
+
+  const env = ctx.createGain()
+  env.gain.setValueAtTime(0.72, 0)
+  env.gain.exponentialRampToValueAtTime(0.001, 0.3)
+  bp.connect(env)
+  env.connect(ctx.destination)
+
+  tail.start(0.025)
+  return ctx.startRendering()
+}
+
+async function synthTom(sr: number): Promise<AudioBuffer> {
+  const dur = 0.32
+  const ctx = new OfflineAudioContext(1, Math.ceil(sr * dur), sr)
+
+  const body = ctx.createOscillator()
+  body.type = 'sine'
+  body.frequency.setValueAtTime(185, 0)
+  body.frequency.exponentialRampToValueAtTime(88, 0.055)
+  body.frequency.exponentialRampToValueAtTime(65, 0.2)
+  const bE = ctx.createGain()
+  bE.gain.setValueAtTime(0.72, 0)
+  bE.gain.exponentialRampToValueAtTime(0.001, 0.28)
+  body.connect(bE)
+
+  // Attack click
+  const nB = ctx.createBuffer(1, Math.ceil(sr * 0.008), sr)
+  const nD = nB.getChannelData(0)
+  for (let i = 0; i < nD.length; i++) nD[i] = (Math.random() * 2 - 1) * Math.exp(-i / (sr * 0.0015))
+  const clk = ctx.createBufferSource()
+  clk.buffer = nB
+  const clkG = ctx.createGain()
+  clkG.gain.value = 0.3
+  clk.connect(clkG)
+
+  const mix = ctx.createGain()
+  mix.gain.value = 0.65
+  bE.connect(mix)
+  clkG.connect(mix)
+  mix.connect(ctx.destination)
+
+  body.start(0); body.stop(dur)
+  clk.start(0)
+  return ctx.startRendering()
+}
+
+async function synthRim(sr: number): Promise<AudioBuffer> {
+  const dur = 0.05
+  const ctx = new OfflineAudioContext(1, Math.ceil(sr * dur), sr)
+
+  const osc = ctx.createOscillator()
+  osc.type = 'triangle'
+  osc.frequency.value = 820
+  const env = ctx.createGain()
+  env.gain.setValueAtTime(0.6, 0)
+  env.gain.exponentialRampToValueAtTime(0.001, 0.04)
+  osc.connect(env)
+
+  // Sharp click
+  const nB = ctx.createBuffer(1, Math.ceil(sr * 0.004), sr)
+  const nD = nB.getChannelData(0)
+  for (let i = 0; i < nD.length; i++) nD[i] = (Math.random() * 2 - 1) * Math.exp(-i / (sr * 0.0004))
+  const clk = ctx.createBufferSource()
+  clk.buffer = nB
+  const clkG = ctx.createGain()
+  clkG.gain.value = 0.55
+  clk.connect(clkG)
+
+  const mix = ctx.createGain()
+  mix.gain.value = 0.5
+  env.connect(mix)
+  clkG.connect(mix)
+  mix.connect(ctx.destination)
+
+  osc.start(0); osc.stop(dur)
+  clk.start(0)
+  return ctx.startRendering()
+}
+
+async function synthPerc(sr: number): Promise<AudioBuffer> {
+  const dur = 0.15
+  const ctx = new OfflineAudioContext(1, Math.ceil(sr * dur), sr)
+
+  const osc = ctx.createOscillator()
+  osc.type = 'sine'
+  osc.frequency.setValueAtTime(420, 0)
+  osc.frequency.exponentialRampToValueAtTime(200, 0.03)
+  const env = ctx.createGain()
+  env.gain.setValueAtTime(0.52, 0)
+  env.gain.exponentialRampToValueAtTime(0.001, 0.1)
+  osc.connect(env)
+  env.connect(ctx.destination)
+  osc.start(0); osc.stop(dur)
+  return ctx.startRendering()
+}
+
+/** Render a complete drum kit (8 samples) in parallel */
+async function prerenderDrumKit(sr: number): Promise<Map<string, AudioBuffer>> {
+  const [kick, snare, hihat, openhat, clapS, tom, rim, perc] = await Promise.all([
+    synthKick(sr), synthSnare(sr),
+    synthHihat(sr, false), synthHihat(sr, true),
+    synthClap(sr), synthTom(sr), synthRim(sr), synthPerc(sr),
+  ])
+  const kit = new Map<string, AudioBuffer>()
+  kit.set('kick', kick); kit.set('snare', snare)
+  kit.set('hihat', hihat); kit.set('openhat', openhat)
+  kit.set('clap', clapS); kit.set('tom', tom)
+  kit.set('rim', rim); kit.set('perc', perc)
+  return kit
+}
+
+// ---- Main render ----
+export async function renderSongToBuffer(song: GeneratedSong, genre: GenreDef): Promise<AudioBuffer> {
+  const sr = 44100
+  const beatsPerBar = song.timeSignature[0]
+  const totalBeats = song.bars * beatsPerBar
+  const totalSec = (totalBeats / song.bpm) * 60
+  const tailSec = 2.8  // extra tail for reverb + delay
+  const offline = new OfflineAudioContext(2, Math.ceil((totalSec + tailSec) * sr), sr)
+  const beatToSec = (b: number) => (b / song.bpm) * 60
+  const midiToFreq = (n: number) => 440 * Math.pow(2, (n - 69) / 12)
+
+  // Pre-render drum kit
+  const drumKit = await prerenderDrumKit(sr)
+
+  // ========================
+  //  MASTER CHAIN
+  // ========================
+
+  // Limiter (brick wall)
+  const limiter = offline.createDynamicsCompressor()
+  limiter.threshold.value = -1
+  limiter.knee.value = 0
+  limiter.ratio.value = 20
+  limiter.attack.value = 0.001
+  limiter.release.value = 0.02
+  limiter.connect(offline.destination)
+
+  // Bus compressor
+  const comp = offline.createDynamicsCompressor()
+  comp.threshold.value = -14
+  comp.knee.value = 6
+  comp.ratio.value = 3.5
+  comp.attack.value = 0.005
+  comp.release.value = 0.12
+  comp.connect(limiter)
+
+  // Master gain
+  const masterGain = offline.createGain()
+  masterGain.gain.value = 0.88
+  masterGain.connect(comp)
+
+  // Master saturation (analogue warmth)
+  const masterSat = offline.createWaveShaper()
+  masterSat.curve = makeSatCurve(1.3)
+  masterSat.oversample = '4x'
+  masterSat.connect(masterGain)
+
+  // ========================
+  //  REVERB (Convolver)
+  // ========================
+  const convolver = offline.createConvolver()
+  convolver.buffer = buildReverbIR(offline, sr, 2.2)
+  const reverbWet = offline.createGain()
+  reverbWet.gain.value = genre.reverbAmount * 0.65
+  convolver.connect(reverbWet)
+  reverbWet.connect(masterGain)
+
+  // ========================
+  //  PING-PONG DELAY
+  // ========================
+  let delayInput: GainNode | null = null
+  if (genre.delayTime > 0) {
+    const dL = offline.createDelay(2)
+    dL.delayTime.value = genre.delayTime
+    const dR = offline.createDelay(2)
+    dR.delayTime.value = genre.delayTime * 0.75
+
+    const fbL = offline.createGain(); fbL.gain.value = 0.3
+    const fbR = offline.createGain(); fbR.gain.value = 0.26
+
+    const panL = offline.createStereoPanner(); panL.pan.value = -0.65
+    const panR = offline.createStereoPanner(); panR.pan.value = 0.65
+
+    const dFilt = offline.createBiquadFilter()
+    dFilt.type = 'lowpass'
+    dFilt.frequency.value = 3200
+
+    const dWet = offline.createGain(); dWet.gain.value = 0.22
+
+    delayInput = offline.createGain(); delayInput.gain.value = 1
+
+    delayInput.connect(dL)
+    delayInput.connect(dR)
+
+    dL.connect(panL); panL.connect(dFilt)
+    dR.connect(panR); panR.connect(dFilt)
+
+    dL.connect(fbL); fbL.connect(dR)
+    dR.connect(fbR); fbR.connect(dL)
+
+    dFilt.connect(dWet)
+    dWet.connect(masterGain)
+  }
+
+  // ========================
+  //  LOW-PASS FILTER
+  // ========================
+  const mainFilter = offline.createBiquadFilter()
+  mainFilter.type = 'lowpass'
+  mainFilter.frequency.value = genre.filterFreq
+  mainFilter.Q.value = 0.85
+  mainFilter.connect(masterSat)
+
+  // ========================
+  //  INSTRUMENT BUSES
+  // ========================
+
+  // -- Drums --
+  const drumBus = offline.createGain()
+  drumBus.gain.value = 0.82
+  drumBus.connect(masterSat)
+  // Drum reverb send
+  const drumRevSend = offline.createGain()
+  drumRevSend.gain.value = genre.reverbAmount * 0.18
+  drumBus.connect(drumRevSend)
+  drumRevSend.connect(convolver)
+
+  // -- Pad / Chords --
+  const padBus = offline.createGain()
+  padBus.gain.value = 0.22
+  padBus.connect(mainFilter)
+  const padRevSend = offline.createGain()
+  padRevSend.gain.value = genre.reverbAmount * 0.55
+  padBus.connect(padRevSend)
+  padRevSend.connect(convolver)
+
+  // -- Bass --
+  const bassBus = offline.createGain()
+  bassBus.gain.value = 0.42
+  // Bass bypasses main filter for punch, gets own LP
+  const bassLP = offline.createBiquadFilter()
+  bassLP.type = 'lowpass'
+  bassLP.frequency.value = 900
+  bassLP.Q.value = 0.5
+  const bassSat = offline.createWaveShaper()
+  bassSat.curve = makeSatCurve(1.8)
+  bassSat.oversample = '2x'
+  bassBus.connect(bassLP)
+  bassLP.connect(bassSat)
+  bassSat.connect(masterGain)
+
+  // -- Lead / Melody --
+  const leadBus = offline.createGain()
+  leadBus.gain.value = 0.26
+  leadBus.connect(mainFilter)
+  const leadRevSend = offline.createGain()
+  leadRevSend.gain.value = genre.reverbAmount * 0.38
+  leadBus.connect(leadRevSend)
+  leadRevSend.connect(convolver)
+  if (delayInput) {
+    const leadDelay = offline.createGain()
+    leadDelay.gain.value = 0.35
+    leadBus.connect(leadDelay)
+    leadDelay.connect(delayInput)
+  }
+
+  // -- Arpeggio --
+  const arpBus = offline.createGain()
+  arpBus.gain.value = 0.16
+  arpBus.connect(mainFilter)
+  if (delayInput) {
+    const arpDelay = offline.createGain()
+    arpDelay.gain.value = 0.4
+    arpBus.connect(arpDelay)
+    arpDelay.connect(delayInput)
+  }
+  const arpRevSend = offline.createGain()
+  arpRevSend.gain.value = genre.reverbAmount * 0.35
+  arpBus.connect(arpRevSend)
+  arpRevSend.connect(convolver)
+
+  // ========================
+  //  RENDER DRUMS
+  // ========================
+  const drumInsts = ['kick','snare','hihat','openhat','clap','tom','rim','perc']
+  const drumPans: Record<string, number> = {
+    kick: 0, snare: 0.05, hihat: 0.3, openhat: 0.25,
+    clap: -0.1, tom: -0.25, rim: 0.35, perc: -0.35,
+  }
+
+  for (const inst of drumInsts) {
+    const steps = song.drums.steps.get(inst)
+    const vels = song.drums.velocities.get(inst)
+    const sample = drumKit.get(inst)
+    if (!steps || !vels || !sample) continue
+
+    for (let s = 0; s < steps.length; s++) {
+      if (!steps[s]) continue
+      const beat = s * 0.25
+      const time = beatToSec(beat)
+      const vel = (vels[s] || 80) / 127
+
+      const src = offline.createBufferSource()
+      src.buffer = sample
+      const g = offline.createGain()
+      g.gain.value = vel
+      const pan = offline.createStereoPanner()
+      pan.pan.value = drumPans[inst] || 0
+
+      src.connect(g)
+      g.connect(pan)
+      pan.connect(drumBus)
+      src.start(time)
+    }
+  }
+
+  // ========================
+  //  RENDER PAD (CHORDS)
+  //  — 3 detuned oscillators per note,
+  //    stereo spread, slow attack
+  // ========================
+  for (const note of song.chords.notes) {
+    const time = beatToSec(note.startBeat)
+    const dur = beatToSec(note.durationBeats)
+    const freq = midiToFreq(note.pitch)
+    const vel = note.velocity / 127
+    const attack = 0.06 + Math.random() * 0.04
+    const release = 0.25 + Math.random() * 0.15
+
+    const detunes = [-10, 0, 10]
+    const pans = [-0.35, 0, 0.35]
+
+    for (let i = 0; i < 3; i++) {
+      const osc = offline.createOscillator()
+      osc.type = genre.padSynthType
+      osc.frequency.value = freq
+      osc.detune.value = detunes[i] + (Math.random() * 3 - 1.5)
+
+      const env = offline.createGain()
+      env.gain.setValueAtTime(0, time)
+      env.gain.linearRampToValueAtTime(vel * 0.22, time + attack)
+      env.gain.setValueAtTime(vel * 0.19, time + dur * 0.85)
+      env.gain.exponentialRampToValueAtTime(0.001, time + dur + release)
+
+      const pan = offline.createStereoPanner()
+      pan.pan.value = pans[i]
+
+      osc.connect(env)
+      env.connect(pan)
+      pan.connect(padBus)
+      osc.start(time)
+      osc.stop(time + dur + release + 0.05)
+    }
+  }
+
+  // ========================
+  //  RENDER BASS
+  //  — Main osc + sub sine one octave below
+  // ========================
+  for (const note of song.bass.notes) {
+    const time = beatToSec(note.startBeat)
+    const dur = beatToSec(note.durationBeats)
+    const freq = midiToFreq(note.pitch)
+    const vel = note.velocity / 127
+
+    // Main oscillator
+    const main = offline.createOscillator()
+    main.type = genre.bassSynthType
+    main.frequency.value = freq
+    const mainE = offline.createGain()
+    mainE.gain.setValueAtTime(0, time)
+    mainE.gain.linearRampToValueAtTime(vel * 0.42, time + 0.008)
+    mainE.gain.setValueAtTime(vel * 0.38, time + dur * 0.8)
+    mainE.gain.exponentialRampToValueAtTime(0.001, time + dur + 0.04)
+    main.connect(mainE)
+    mainE.connect(bassBus)
+    main.start(time)
+    main.stop(time + dur + 0.06)
+
+    // Sub sine — one octave below for depth
+    const sub = offline.createOscillator()
+    sub.type = 'sine'
+    sub.frequency.value = freq * 0.5
+    const subE = offline.createGain()
+    subE.gain.setValueAtTime(0, time)
+    subE.gain.linearRampToValueAtTime(vel * 0.3, time + 0.006)
+    subE.gain.setValueAtTime(vel * 0.26, time + dur * 0.85)
+    subE.gain.exponentialRampToValueAtTime(0.001, time + dur + 0.03)
+    sub.connect(subE)
+    subE.connect(bassBus)
+    sub.start(time)
+    sub.stop(time + dur + 0.05)
+  }
+
+  // ========================
+  //  RENDER MELODY
+  //  — 2 detuned oscillators + vibrato LFO
+  // ========================
+  // Global vibrato LFO
+  const vibLFO = offline.createOscillator()
+  vibLFO.type = 'sine'
+  vibLFO.frequency.value = 5.2
+  const vibDepth = offline.createGain()
+  vibDepth.gain.value = 3.5  // cents
+  vibLFO.connect(vibDepth)
+  vibLFO.start(0)
+  vibLFO.stop(totalSec + tailSec)
+
+  for (const note of song.melody.notes) {
+    const time = beatToSec(note.startBeat)
+    const dur = beatToSec(note.durationBeats)
+    const freq = midiToFreq(note.pitch)
+    const vel = note.velocity / 127
+    const attack = 0.012 + Math.random() * 0.01
+    const release = 0.08 + Math.random() * 0.06
+
+    // Main oscillator
+    const osc1 = offline.createOscillator()
+    osc1.type = genre.synthType
+    osc1.frequency.value = freq
+    osc1.detune.value = -6
+    vibDepth.connect(osc1.detune) // vibrato
+
+    // Detuned layer
+    const osc2 = offline.createOscillator()
+    osc2.type = genre.synthType
+    osc2.frequency.value = freq
+    osc2.detune.value = 6
+    vibDepth.connect(osc2.detune)
+
+    const env = offline.createGain()
+    env.gain.setValueAtTime(0, time)
+    env.gain.linearRampToValueAtTime(vel * 0.28, time + attack)
+    env.gain.setValueAtTime(vel * 0.24, time + Math.max(0, dur - 0.02))
+    env.gain.exponentialRampToValueAtTime(0.001, time + dur + release)
+
+    // Slight stereo
+    const pan = offline.createStereoPanner()
+    pan.pan.value = (Math.random() - 0.5) * 0.3
+
+    osc1.connect(env)
+    osc2.connect(env)
+    env.connect(pan)
+    pan.connect(leadBus)
+
+    osc1.start(time); osc1.stop(time + dur + release + 0.05)
+    osc2.start(time); osc2.stop(time + dur + release + 0.05)
+  }
+
+  // ========================
+  //  RENDER ARPEGGIO
+  //  — Plucky envelope, short decay
+  // ========================
+  if (song.arpeggio) {
+    for (const note of song.arpeggio.notes) {
+      const time = beatToSec(note.startBeat)
+      const dur = beatToSec(note.durationBeats)
+      const freq = midiToFreq(note.pitch)
+      const vel = note.velocity / 127
+
+      const osc = offline.createOscillator()
+      osc.type = genre.synthType
+      osc.frequency.value = freq
+
+      // Plucky: fast attack, quick decay
+      const env = offline.createGain()
+      env.gain.setValueAtTime(0, time)
+      env.gain.linearRampToValueAtTime(vel * 0.2, time + 0.004)
+      env.gain.exponentialRampToValueAtTime(vel * 0.06, time + dur * 0.35)
+      env.gain.exponentialRampToValueAtTime(0.001, time + dur + 0.05)
+
+      // Per-note filter for pluck character
+      const filt = offline.createBiquadFilter()
+      filt.type = 'lowpass'
+      filt.frequency.setValueAtTime(Math.min(freq * 8, 12000), time)
+      filt.frequency.exponentialRampToValueAtTime(Math.max(freq * 1.5, 400), time + dur * 0.6)
+      filt.Q.value = 1.5
+
+      const pan = offline.createStereoPanner()
+      pan.pan.value = (Math.random() - 0.5) * 0.5
+
+      osc.connect(filt)
+      filt.connect(env)
+      env.connect(pan)
+      pan.connect(arpBus)
+
+      osc.start(time)
+      osc.stop(time + dur + 0.08)
+    }
+  }
+
+  return offline.startRendering()
+}

@@ -1,234 +1,279 @@
-import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Mic, AudioLines, Piano, SlidersHorizontal, Sliders, FileText, Music, Lightbulb, Zap, Sparkles, Waves } from 'lucide-react'
 
 export default function Welcome() {
-  const [currentStep, setCurrentStep] = useState(0)
+  const navigate = useNavigate()
 
-  const features = [
+  const mainFeatures = [
     {
-      icon: '🎤',
-      title: 'Voice Clone Song Maker',
-      description: 'Kendi sesinizi veya AI ses modellerini kullanarak şarkı oluşturun',
-      steps: [
-        '1. Ses dosyanızı yükleyin veya AI ses modeli seçin',
-        '2. İstediğiniz şarkıyı seçin veya metninizi yazın',
-        '3. AI ile ses klonlama ve üretim işlemini başlatın'
-      ]
+      icon: <Mic size={28} />,
+      title: 'Ses Klonlama',
+      description: 'Sesinizi kaydedin, bir şarkı yükleyin — AI sesinizi şarkıya aktarsın.',
+      color: '#6366f1',
+      path: '/ses-klonla',
+      badge: 'En Popüler'
     },
     {
-      icon: '✍️',
-      title: 'Text to Song',
-      description: 'Metinden AI ile tam bir şarkı üretin',
-      steps: [
-        '1. Şarkınızın sözlerini yazın',
-        '2. Müzik stilini, tempoyu ve tonunu ayarlayın',
-        '3. AI ses modelini seçin ve üretin'
-      ]
+      icon: <AudioLines size={28} />,
+      title: 'Ses Ayırma (AI)',
+      description: 'Demucs AI ile şarkıyı vokal, bas, davul ve enstrümanlara ayırın.',
+      color: '#8b5cf6',
+      path: '/stem-ayir',
+      badge: 'Demucs AI'
     },
     {
-      icon: '🎛️',
-      title: 'Professional Studio',
-      description: 'DAW tarzı profesyonel mixing ve mastering ortamı',
-      steps: [
-        '1. Track\'lere ses dosyası yükleyin',
-        '2. Volume, Pan, ve efektleri ayarlayın',
-        '3. AI Assistant ile otomatik optimizasyon yapın'
-      ]
+      icon: <Piano size={28} />,
+      title: 'Pro Studio',
+      description: 'DAW tarzı profesyonel mixing ve mastering ortamı. Efekt zincirleri, EQ, kompresör ve daha fazlası.',
+      color: '#ec4899',
+      path: '/studio',
+      badge: 'Gelişmiş'
+    },
+  ]
+
+  const otherFeatures = [
+    {
+      icon: <SlidersHorizontal size={22} />,
+      title: 'Stem Mixer',
+      description: 'Ayrılmış stem\'leri istediğiniz oranda karıştırın.',
+      path: '/stem-mixer'
     },
     {
-      icon: '🎼',
-      title: 'Audio Separator',
-      description: 'Müziği farklı stem\'lere ayırın (Demucs)',
-      steps: [
-        '1. Ayırmak istediğiniz müzik dosyasını yükleyin',
-        '2. Ayırma modelini seçin (2, 4, veya 6 stem)',
-        '3. Vokal, drums, bass ve diğer parçaları indirin'
-      ]
+      icon: <Sliders size={22} />,
+      title: 'Stem Editör',
+      description: 'Vokal ve müzik kanallarını bağımsız düzenleyin.',
+      path: '/stem-editor'
     },
     {
-      icon: '🎵',
-      title: 'Music Generator',
-      description: 'AI ile instrumental müzik üretin (AudioCraft)',
-      steps: [
-        '1. Üretmek istediğiniz müziği tanımlayın',
-        '2. Süre ve parametreleri ayarlayın',
-        '3. AI ile benzersiz müzik oluşturun'
-      ]
+      icon: <FileText size={22} />,
+      title: 'Metin → Şarkı',
+      description: 'Yazılan metni AI ile şarkıya dönüştürün.',
+      path: '/metin-sarki'
     },
     {
-      icon: '🎭',
-      title: 'Voice Converter',
-      description: 'Ses dönüştürme ve klonlama (RVC)',
-      steps: [
-        '1. Dönüştürmek istediğiniz ses dosyasını yükleyin',
-        '2. Hedef ses modelini seçin',
-        '3. Pitch ve diğer ayarları yapın ve dönüştürün'
-      ]
-    }
+      icon: <Music size={22} />,
+      title: 'Müzik Üret',
+      description: 'AI ile prompt tabanlı müzik oluşturun.',
+      path: '/muzik-uret'
+    },
+  ]
+
+  const stats = [
+    { value: '4+', label: 'AI Model', color: '#6366f1' },
+    { value: '12+', label: 'Ses Efekti', color: '#8b5cf6' },
+    { value: 'HD', label: 'Ses Kalitesi', color: '#ec4899' },
+    { value: '∞', label: 'Yaratıcılık', color: '#10b981' },
   ]
 
   return (
-    <div className="component-container">
-      <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
-        <h1 style={{ 
-          fontSize: '4rem', 
-          marginBottom: '1rem',
-          background: 'linear-gradient(135deg, var(--primary-color), var(--secondary-color), var(--accent-color))',
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+      {/* Hero Section */}
+      <div style={{
+        textAlign: 'center',
+        padding: '3rem 1.5rem',
+        background: 'linear-gradient(135deg, rgba(99,102,241,0.08) 0%, rgba(236,72,153,0.08) 100%)',
+        borderRadius: 'var(--radius-xl)',
+        border: '1px solid var(--border-subtle)',
+      }}>
+        <div style={{
+          width: '64px',
+          height: '64px',
+          borderRadius: 'var(--radius-lg)',
+          background: 'linear-gradient(135deg, #6366f1, #ec4899)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          margin: '0 auto 1.25rem',
+        }}>
+          <Waves size={32} color="white" />
+        </div>
+        <h1 style={{
+          fontSize: '2.5rem',
+          fontWeight: 800,
+          marginBottom: '0.75rem',
+          background: 'linear-gradient(135deg, #6366f1, #ec4899)',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
-          backgroundClip: 'text'
         }}>
-          🎵 VoiceSong'a Hoş Geldiniz!
+          VoiceSong Studio
         </h1>
-        <p style={{ fontSize: '1.5rem', color: 'var(--text-muted)', maxWidth: '800px', margin: '0 auto' }}>
-          AI destekli profesyonel müzik prodüksiyon platformu
+        <p style={{
+          fontSize: '1.15rem',
+          color: 'var(--text-secondary)',
+          maxWidth: '600px',
+          margin: '0 auto 2rem',
+          lineHeight: 1.6
+        }}>
+          AI destekli ses klonlama, stem ayırma ve profesyonel müzik üretim platformu
         </p>
+        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <button className="btn" onClick={() => navigate('/ses-klonla')} style={{ padding: '0.85rem 2rem' }}>
+            Ses Klonla
+          </button>
+          <button className="btn btn-secondary" onClick={() => navigate('/stem-ayir')} style={{ padding: '0.85rem 2rem' }}>
+            Ses Ayır
+          </button>
+          <button className="btn btn-secondary" onClick={() => navigate('/studio')} style={{ padding: '0.85rem 2rem' }}>
+            Studio
+          </button>
+        </div>
       </div>
 
-      {/* Feature Cards */}
-      <div className="grid grid-3" style={{ marginBottom: '3rem' }}>
-        {features.map((feature, index) => (
-          <div
-            key={index}
-            className="card"
-            style={{
-              cursor: 'pointer',
-              transform: currentStep === index ? 'scale(1.05)' : 'scale(1)',
-              transition: 'all 0.3s ease'
-            }}
-            onClick={() => setCurrentStep(index)}
-          >
-            <div style={{ fontSize: '4rem', marginBottom: '1rem', textAlign: 'center' }}>
-              {feature.icon}
-            </div>
-            <h3 style={{ fontSize: '1.5rem', marginBottom: '0.75rem', textAlign: 'center' }}>
-              {feature.title}
-            </h3>
-            <p style={{ fontSize: '1rem', color: 'var(--text-muted)', marginBottom: '1.5rem', textAlign: 'center' }}>
-              {feature.description}
-            </p>
-            {currentStep === index && (
-              <div style={{ 
-                marginTop: '1.5rem', 
-                paddingTop: '1.5rem', 
-                borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-                animation: 'fadeIn 0.5s ease-in-out'
+      {/* Main Features */}
+      <div>
+        <h2 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text-primary)' }}>
+          Ana Özellikler
+        </h2>
+        <div className="grid grid-3">
+          {mainFeatures.map((feature) => (
+            <div
+              key={feature.title}
+              onClick={() => navigate(feature.path)}
+              style={{
+                padding: '1.75rem',
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-lg)',
+                cursor: 'pointer',
+                transition: 'all 0.25s ease',
+                position: 'relative',
+                overflow: 'hidden',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = feature.color + '55'
+                e.currentTarget.style.transform = 'translateY(-4px)'
+                e.currentTarget.style.boxShadow = `0 8px 25px ${feature.color}22`
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = 'var(--border-subtle)'
+                e.currentTarget.style.transform = 'translateY(0)'
+                e.currentTarget.style.boxShadow = 'none'
+              }}
+            >
+              {feature.badge && (
+                <span style={{
+                  position: 'absolute',
+                  top: '1rem',
+                  right: '1rem',
+                  fontSize: '0.68rem',
+                  fontWeight: 700,
+                  padding: '0.25rem 0.6rem',
+                  borderRadius: '20px',
+                  background: feature.color + '22',
+                  color: feature.color,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                }}>
+                  {feature.badge}
+                </span>
+              )}
+              <div style={{
+                marginBottom: '1rem',
+                width: '52px',
+                height: '52px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 'var(--radius-md)',
+                background: feature.color + '15',
+                color: feature.color,
               }}>
-                <h4 style={{ fontSize: '1.1rem', marginBottom: '1rem', color: 'var(--primary-color)' }}>
-                  📋 Nasıl Kullanılır:
-                </h4>
-                {feature.steps.map((step, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      padding: '0.75rem',
-                      marginBottom: '0.5rem',
-                      background: 'rgba(99, 102, 241, 0.05)',
-                      borderRadius: '8px',
-                      borderLeft: '3px solid var(--primary-color)',
-                      fontSize: '0.9rem'
-                    }}
-                  >
-                    {step}
-                  </div>
-                ))}
+                {feature.icon}
               </div>
-            )}
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '0.5rem' }}>
+                {feature.title}
+              </h3>
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                {feature.description}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-4" style={{ textAlign: 'center' }}>
+        {stats.map((stat) => (
+          <div key={stat.label} style={{
+            padding: '1.25rem',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-lg)',
+          }}>
+            <div style={{ fontSize: '2rem', fontWeight: 800, color: stat.color, marginBottom: '0.25rem' }}>
+              {stat.value}
+            </div>
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              {stat.label}
+            </div>
           </div>
         ))}
       </div>
 
-      {/* Quick Stats */}
-      <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
-        <h3 style={{ fontSize: '1.8rem', marginBottom: '2rem' }}>🚀 Platformun Gücü</h3>
+      {/* Other Features */}
+      <div>
+        <h2 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text-primary)' }}>
+          Diğer Araçlar
+        </h2>
         <div className="grid grid-4">
-          <div>
-            <div style={{ fontSize: '3rem', fontWeight: '700', color: 'var(--primary-color)', marginBottom: '0.5rem' }}>
-              6
+          {otherFeatures.map((feature) => (
+            <div
+              key={feature.title}
+              onClick={() => navigate(feature.path)}
+              style={{
+                padding: '1.25rem',
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-md)',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = 'var(--border-light)'
+                e.currentTarget.style.transform = 'translateY(-2px)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = 'var(--border-subtle)'
+                e.currentTarget.style.transform = 'translateY(0)'
+              }}
+            >
+              <div style={{ marginBottom: '0.75rem', color: 'var(--text-secondary)' }}>{feature.icon}</div>
+              <h4 style={{ fontSize: '0.95rem', fontWeight: 600, marginBottom: '0.35rem' }}>
+                {feature.title}
+              </h4>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                {feature.description}
+              </p>
             </div>
-            <div style={{ color: 'var(--text-muted)' }}>Güçlü Özellik</div>
-          </div>
-          <div>
-            <div style={{ fontSize: '3rem', fontWeight: '700', color: 'var(--secondary-color)', marginBottom: '0.5rem' }}>
-              8+
-            </div>
-            <div style={{ color: 'var(--text-muted)' }}>Profesyonel Efekt</div>
-          </div>
-          <div>
-            <div style={{ fontSize: '3rem', fontWeight: '700', color: 'var(--accent-color)', marginBottom: '0.5rem' }}>
-              AI
-            </div>
-            <div style={{ color: 'var(--text-muted)' }}>Yapay Zeka Desteği</div>
-          </div>
-          <div>
-            <div style={{ fontSize: '3rem', fontWeight: '700', color: 'var(--success-color)', marginBottom: '0.5rem' }}>
-              ∞
-            </div>
-            <div style={{ color: 'var(--text-muted)' }}>Sınırsız Yaratıcılık</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Getting Started */}
-      <div style={{ marginTop: '3rem', textAlign: 'center' }}>
-        <h3 style={{ fontSize: '2rem', marginBottom: '1.5rem' }}>🎯 Hemen Başlayın!</h3>
-        <p style={{ fontSize: '1.2rem', color: 'var(--text-muted)', marginBottom: '2rem' }}>
-          Üstteki menüden bir özellik seçerek yaratıcı yolculuğunuza başlayın
-        </p>
-        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
-          <button className="btn" style={{ padding: '1rem 2rem', fontSize: '1.1rem' }}>
-            🎤 Voice Clone ile Başla
-          </button>
-          <button className="btn btn-secondary" style={{ padding: '1rem 2rem', fontSize: '1.1rem' }}>
-            🎛️ Studio'yu Keşfet
-          </button>
-          <button className="btn btn-secondary" style={{ padding: '1rem 2rem', fontSize: '1.1rem' }}>
-            📚 Tüm Özellikleri Gör
-          </button>
+          ))}
         </div>
       </div>
 
       {/* Tips */}
-      <div className="card" style={{ marginTop: '3rem', padding: '2rem', background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(236, 72, 153, 0.1))' }}>
-        <h3 style={{ fontSize: '1.5rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          💡 İpuçları
+      <div style={{
+        padding: '1.5rem',
+        background: 'linear-gradient(135deg, rgba(99,102,241,0.06), rgba(236,72,153,0.06))',
+        border: '1px solid var(--border-subtle)',
+        borderRadius: 'var(--radius-lg)',
+      }}>
+        <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Lightbulb size={18} /> Hızlı İpuçları
         </h3>
         <div className="grid grid-2">
-          <div style={{ display: 'flex', gap: '1rem', padding: '1rem' }}>
-            <div style={{ fontSize: '2rem' }}>✨</div>
-            <div>
-              <h4 style={{ marginBottom: '0.5rem' }}>Professional Studio</h4>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                Track'lere dosya sürükleyip bırakabilir ve hızlıca mix yapabilirsiniz
-              </p>
+          {[
+            { icon: <Mic size={18} />, title: 'Net Ses Kaydı', desc: 'Ses klonlama için sessiz ortamda en az 20 saniye kayıt yapın.' },
+            { icon: <Sparkles size={18} />, title: 'Yüksek Kalite', desc: 'Demucs AI shifts=3 ile en temiz vokal izolasyonunu sağlar.' },
+            { icon: <SlidersHorizontal size={18} />, title: 'Efekt Zincirleri', desc: 'Studio\'da EQ, kompresör, reverb gibi efektleri sıralayın.' },
+            { icon: <Zap size={18} />, title: 'Hızlı İşlem', desc: 'Tüm AI işlemleri backend\'de optimize edilmiş şekilde çalışır.' },
+          ].map((tip) => (
+            <div key={tip.title} style={{ display: 'flex', gap: '0.75rem', padding: '0.5rem' }}>
+              <div style={{ flexShrink: 0, color: 'var(--text-secondary)', marginTop: '2px' }}>{tip.icon}</div>
+              <div>
+                <h4 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.2rem' }}>{tip.title}</h4>
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>{tip.desc}</p>
+              </div>
             </div>
-          </div>
-          <div style={{ display: 'flex', gap: '1rem', padding: '1rem' }}>
-            <div style={{ fontSize: '2rem' }}>🤖</div>
-            <div>
-              <h4 style={{ marginBottom: '0.5rem' }}>AI Assistant</h4>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                AI Mixing Assistant otomatik mastering ve optimizasyon önerileri sunar
-              </p>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: '1rem', padding: '1rem' }}>
-            <div style={{ fontSize: '2rem' }}>🎼</div>
-            <div>
-              <h4 style={{ marginBottom: '0.5rem' }}>Efekt Zincirleri</h4>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                Reverb, Delay, EQ gibi efektleri sıralayarak profesyonel sonuçlar elde edin
-              </p>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: '1rem', padding: '1rem' }}>
-            <div style={{ fontSize: '2rem' }}>⚡</div>
-            <div>
-              <h4 style={{ marginBottom: '0.5rem' }}>Hızlı İşlem</h4>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                Tüm AI işlemleri backend'de optimize edilmiş şekilde çalışır
-              </p>
-            </div>
-          </div>
+          ))}
         </div>
       </div>
     </div>

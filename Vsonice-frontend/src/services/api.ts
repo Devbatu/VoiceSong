@@ -140,16 +140,21 @@ class ApiService {
     });
   }
 
-  async cloneVoiceAndSing(voiceFile: File, songFile: File) {
+  async cloneVoiceAndSing(voiceFile: File | null, songFile: File, voiceProfileId?: string) {
     const formData = new FormData();
-    formData.append('voice_file', voiceFile);
+    if (voiceFile) {
+      formData.append('voice_file', voiceFile);
+    }
     formData.append('song_file', songFile);
+    if (voiceProfileId) {
+      formData.append('voice_profile_id', voiceProfileId);
+    }
 
     const url = `${this.baseUrl}/api/clone-voice-sing`;
     
-    // 10 minute timeout for voice cloning (Demucs AI separation takes time on CPU)
+    // 30 minute timeout for voice cloning (Demucs AI separation takes time on CPU)
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 600000);
+    const timeoutId = setTimeout(() => controller.abort(), 1800000);
     
     try {
       const response = await fetch(url, {
@@ -168,10 +173,79 @@ class ApiService {
     } catch (error: any) {
       clearTimeout(timeoutId);
       if (error.name === 'AbortError') {
-        throw new Error('İşlem zaman aşımına uğradı (10 dakika). Daha kısa bir şarkı deneyin.');
+        throw new Error('İşlem zaman aşımına uğradı (30 dakika). Daha kısa bir şarkı deneyin.');
       }
       throw error;
     }
+  }
+
+  // Voice Profiles (Kişisel Ses Paketleri)
+  async saveVoiceProfile(voiceFile: File, name: string) {
+    const formData = new FormData();
+    formData.append('voice_file', voiceFile);
+    formData.append('name', name);
+
+    const url = `${this.baseUrl}/api/voice-profiles`;
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      throw new Error(errorData?.detail || `Profil kaydetme başarısız: ${response.statusText}`);
+    }
+
+    return await response.json();
+  }
+
+  async listVoiceProfiles() {
+    return this.request<{
+      profiles: Array<{
+        id: string;
+        name: string;
+        created_at: string;
+        duration: number;
+        has_embedding: boolean;
+        audio_url: string;
+        audio_exists: boolean;
+      }>;
+    }>('/api/voice-profiles');
+  }
+
+  async deleteVoiceProfile(profileId: string) {
+    return this.request<{ message: string }>(`/api/voice-profiles/${profileId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  getVoiceProfileAudioUrl(profileId: string) {
+    return `${this.baseUrl}/api/voice-profiles/${profileId}/audio`;
+  }
+
+  // Clone History (Geçmiş Sonuçlar)
+  async listCloneHistory() {
+    return this.request<{
+      results: Array<{
+        id: string;
+        name: string;
+        filename: string;
+        created_at: string;
+        duration: number;
+        size_mb: number;
+        download_url: string;
+        components: {
+          vocals?: string;
+          instrumental?: string;
+        };
+      }>;
+    }>('/api/clone-history');
+  }
+
+  async deleteCloneResult(resultId: string) {
+    return this.request<{ message: string }>(`/api/clone-history/${resultId}`, {
+      method: 'DELETE',
+    });
   }
 
   async getVoiceLibrary() {
@@ -184,6 +258,133 @@ class ApiService {
         gender: string;
       }>;
     }>('/api/voice-library');
+  }
+
+  // Voice AI Training (Ses Modeli Eğitimi)
+  async trainVoiceModel(voiceFiles: File[], modelName: string, profileIds: string[] = []) {
+    const formData = new FormData();
+    voiceFiles.forEach(file => formData.append('voice_files', file));
+    formData.append('model_name', modelName);
+    if (profileIds.length > 0) {
+      formData.append('profile_ids', profileIds.join(','));
+    }
+
+    const url = `${this.baseUrl}/api/voice-training/train`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 min timeout
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.detail || `Model eğitimi başarısız: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error('Eğitim zaman aşımına uğradı (10 dakika).');
+      }
+      throw error;
+    }
+  }
+
+  async addTrainingSamples(modelId: string, voiceFiles: File[]) {
+    const formData = new FormData();
+    formData.append('model_id', modelId);
+    voiceFiles.forEach(file => formData.append('voice_files', file));
+
+    const url = `${this.baseUrl}/api/voice-training/add-samples`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 600000);
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.detail || `Örnek ekleme başarısız: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error('İşlem zaman aşımına uğradı.');
+      }
+      throw error;
+    }
+  }
+
+  async listTrainedModels() {
+    return this.request<{
+      models: Array<{
+        id: string;
+        name: string;
+        created_at: string;
+        updated_at?: string;
+        num_samples: number;
+        total_duration: number;
+        consistency_score: number;
+        quality_grade: string;
+        has_embedding: boolean;
+        sample_names?: string[];
+      }>;
+    }>('/api/voice-training/models');
+  }
+
+  async deleteTrainedModel(modelId: string) {
+    return this.request<{ message: string }>(`/api/voice-training/models/${modelId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Clone with trained model support
+  async cloneWithTrainedModel(
+    songFile: File,
+    voiceModelId: string
+  ) {
+    const formData = new FormData();
+    formData.append('song_file', songFile);
+    formData.append('voice_model_id', voiceModelId);
+
+    const url = `${this.baseUrl}/api/clone-voice-sing`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1800000);
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.detail || `Voice cloning failed: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error('İşlem zaman aşımına uğradı (30 dakika).');
+      }
+      throw error;
+    }
   }
 }
 

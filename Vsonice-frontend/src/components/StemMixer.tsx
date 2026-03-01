@@ -214,13 +214,13 @@ interface Stem {
 
 // Stem icon mapping
 const STEM_ICONS: Record<string, string> = {
-  vocals: '🎤',
-  drums: '🥁',
-  bass: '🎸',
-  other: '🎹',
-  music: '🎵',
-  piano: '🎹',
-  guitar: '🎸',
+  vocals: '',
+  drums: '',
+  bass: '',
+  other: '',
+  music: '',
+  piano: '',
+  guitar: '',
 }
 
 // AI Effect types
@@ -235,26 +235,26 @@ interface AIEffect {
 }
 
 const AI_EFFECTS: AIEffect[] = [
-  { type: 'autotune', label: 'AutoTune', icon: '🎯', description: 'Vokal pitch düzeltme - profesyonel ses ayarı', params: { key: 'C', speed: 5 } },
-  { type: 'pitch_shift', label: 'Pitch Shift', icon: '🔀', description: 'Ses tonunu yarım ton yukarı/aşağı kaydır', params: { semitones: 0 } },
-  { type: 'tempo_change', label: 'Tempo Değiştir', icon: '⏱️', description: 'Hızlandır veya yavaşlat (kalite korunarak)', params: { factor: 1.0 } },
-  { type: 'reverb', label: 'AI Reverb', icon: '🏛️', description: 'Yapay alan hissi (oda, salon, kilise)', params: { room_size: 0.5, damping: 0.5, wet: 0.3 } },
-  { type: 'noise_reduction', label: 'Gürültü Temizle', icon: '🔇', description: 'AI ile arka plan gürültüsünü kaldır', params: { strength: 0.7 } },
-  { type: 'eq_preset', label: 'EQ Preset', icon: '📊', description: 'Hazır EQ profilleri (Pop, Rock, Jazz, R&B)', params: { preset: 'pop' } },
-  { type: 'harmonizer', label: 'Harmonizer', icon: '🎶', description: 'Otomatik harmoni sesi ekle', params: { interval: 3, mix: 0.4 } },
-  { type: 'vocal_enhance', label: 'Vokal Boost', icon: '✨', description: 'Vokal netliği ve sıcaklığını artır', params: { warmth: 0.5, presence: 0.5, air: 0.3 } },
+  { type: 'autotune', label: 'AutoTune', icon: '', description: 'Vokal pitch düzeltme - profesyonel ses ayarı', params: { key: 'C', speed: 5 } },
+  { type: 'pitch_shift', label: 'Pitch Shift', icon: '', description: 'Ses tonunu yarım ton yukarı/aşağı kaydır', params: { semitones: 0 } },
+  { type: 'tempo_change', label: 'Tempo Değiştir', icon: '', description: 'Hızlandır veya yavaşlat (kalite korunarak)', params: { factor: 1.0 } },
+  { type: 'reverb', label: 'AI Reverb', icon: '', description: 'Yapay alan hissi (oda, salon, kilise)', params: { room_size: 0.5, damping: 0.5, wet: 0.3 } },
+  { type: 'noise_reduction', label: 'Gürültü Temizle', icon: '', description: 'AI ile arka plan gürültüsünü kaldır', params: { strength: 0.7 } },
+  { type: 'eq_preset', label: 'EQ Preset', icon: '', description: 'Hazır EQ profilleri (Pop, Rock, Jazz, R&B)', params: { preset: 'pop' } },
+  { type: 'harmonizer', label: 'Harmonizer', icon: '', description: 'Otomatik harmoni sesi ekle', params: { interval: 3, mix: 0.4 } },
+  { type: 'vocal_enhance', label: 'Vokal Boost', icon: '', description: 'Vokal netliği ve sıcaklığını artır', params: { warmth: 0.5, presence: 0.5, air: 0.3 } },
 ]
 
 const AUTOTUNE_KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 const EQ_PRESETS = [
-  { value: 'pop', label: '🎵 Pop' },
-  { value: 'rock', label: '🎸 Rock' },
-  { value: 'jazz', label: '🎷 Jazz' },
-  { value: 'rnb', label: '🎤 R&B' },
-  { value: 'electronic', label: '🎧 Electronic' },
-  { value: 'vocal_clarity', label: '🗣️ Vokal Netlik' },
-  { value: 'bass_boost', label: '🔊 Bass Boost' },
-  { value: 'warm', label: '☀️ Sıcak Ton' },
+  { value: 'pop', label: 'Pop' },
+  { value: 'rock', label: 'Rock' },
+  { value: 'jazz', label: 'Jazz' },
+  { value: 'rnb', label: 'R&B' },
+  { value: 'electronic', label: 'Electronic' },
+  { value: 'vocal_clarity', label: 'Vokal Netlik' },
+  { value: 'bass_boost', label: 'Bass Boost' },
+  { value: 'warm', label: 'Sıcak Ton' },
 ]
 
 export default function StemMixer() {
@@ -295,16 +295,16 @@ export default function StemMixer() {
 
       // Animated progress
       setLoadingProgress(0)
-      setLoadingMessage('📤 Dosya yükleniyor...')
+      setLoadingMessage('Dosya yükleniyor...')
       const progressStages = [
-        { at: 5, msg: '📤 Dosya yükleniyor...' },
-        { at: 15, msg: '🧠 Demucs AI modeli hazırlanıyor...' },
-        { at: 25, msg: '🎵 Müzik analiz ediliyor...' },
-        { at: 40, msg: '🔬 Frekans spektrumu ayrıştırılıyor...' },
-        { at: 55, msg: '🎤 Vokal izolasyonu yapılıyor...' },
-        { at: 70, msg: '🥁 Davul & bas ayrıştırılıyor...' },
-        { at: 85, msg: '🎹 Enstrümanlar tespit ediliyor...' },
-        { at: 92, msg: '💎 Stems dosyaları oluşturuluyor...' },
+        { at: 5, msg: 'Dosya yükleniyor...' },
+        { at: 15, msg: 'Demucs AI modeli hazırlanıyor...' },
+        { at: 25, msg: 'Müzik analiz ediliyor...' },
+        { at: 40, msg: 'Frekans spektrumu ayrıştırılıyor...' },
+        { at: 55, msg: 'Vokal izolasyonu yapılıyor...' },
+        { at: 70, msg: 'Davul & bas ayrıştırılıyor...' },
+        { at: 85, msg: 'Enstrümanlar tespit ediliyor...' },
+        { at: 92, msg: 'Stems dosyaları oluşturuluyor...' },
       ]
       let stageIdx = 0
       progressTimerRef.current = setInterval(() => {
@@ -351,11 +351,11 @@ export default function StemMixer() {
         setStems(fixedStems)
         setSelectedStems(data.stems.map((s: any) => s.name))
         setLoadingProgress(100)
-        setLoadingMessage('✅ Tamamlandı!')
-        setSuccess(`🎉 ${data.stems.length} stem başarıyla ayrıştırıldı!`)
+        setLoadingMessage('Tamamlandı!')
+        setSuccess(`${data.stems.length} stem başarıyla ayrıştırıldı!`)
       } catch (err: any) {
         if (err.name === 'AbortError') {
-          setError('⏱️ İşlem zaman aşımına uğradı (30 dakika). Daha kısa bir şarkı deneyin.')
+          setError('İşlem zaman aşımına uğradı (30 dakika). Daha kısa bir şarkı deneyin.')
         } else {
           setError(err.message || 'Ayrıştırma sırasında hata oluştu')
         }
@@ -391,7 +391,7 @@ export default function StemMixer() {
   const exportMix = async () => {
     if (selectedStems.length === 0) return
     setLoading(true)
-    setLoadingMessage('💾 Mix dosyası oluşturuluyor...')
+    setLoadingMessage('Mix dosyası oluşturuluyor...')
     setError(null)
     try {
       const response = await fetch(`${API_BASE}/api/export_mix`, {
@@ -407,7 +407,7 @@ export default function StemMixer() {
       a.download = `mix_${selectedStems.join('_')}.wav`
       a.click()
       window.URL.revokeObjectURL(url)
-      setSuccess('✅ Mix başarıyla indirildi!')
+      setSuccess('Mix başarıyla indirildi!')
     } catch (err: any) {
       setError(err.message || 'Export hatası')
     }
@@ -464,7 +464,7 @@ export default function StemMixer() {
           ? { ...s, url: `${API_BASE}${data.url}?t=${Date.now()}` }
           : s
       ))
-      setSuccess(`✅ ${AI_EFFECTS.find(e => e.type === effectType)?.label} başarıyla uygulandı!`)
+      setSuccess(`${AI_EFFECTS.find(e => e.type === effectType)?.label} başarıyla uygulandı!`)
       setActiveEffect(null)
       setEffectTarget(null)
     } catch (err: any) {
@@ -483,7 +483,7 @@ export default function StemMixer() {
 
   return (
     <div className="component-container">
-      <h2>🎛️ Stem Mixer - AI Müzik Ayrıştırma & Efektler</h2>
+      <h2>Stem Mixer - AI Müzik Ayrıştırma & Efektler</h2>
       <p style={{ marginBottom: '1rem', color: 'var(--text-muted)' }}>
         Müzik dosyasını yükleyin → AI ile stem'lere ayırın → AutoTune, Reverb, Pitch Shift gibi AI efektleri uygulayın → İndirin
       </p>
@@ -494,45 +494,45 @@ export default function StemMixer() {
         style={{ marginBottom: '1.5rem', fontSize: '0.9rem' }}
         onClick={() => setShowGuide(!showGuide)}
       >
-        {showGuide ? '❌ Kapat' : '❓ Nasıl Kullanılır?'}
+        {showGuide ? 'Kapat' : 'Nasıl Kullanılır?'}
       </button>
 
       {/* Guide Section */}
       {showGuide && (
         <div className="card" style={{ padding: '2rem', marginBottom: '2rem', background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(168, 85, 247, 0.08))', border: '1px solid rgba(99, 102, 241, 0.3)' }}>
-          <h3 style={{ marginBottom: '1.5rem', fontSize: '1.3rem' }}>📖 Nasıl Kullanılır? - Adım Adım Rehber</h3>
+          <h3 style={{ marginBottom: '1.5rem', fontSize: '1.3rem' }}>Nasıl Kullanılır? - Adım Adım Rehber</h3>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.2rem', marginBottom: '1.5rem' }}>
             <div style={{ padding: '1.2rem', borderRadius: '12px', background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.2)' }}>
-              <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📤</div>
+              <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>1</div>
               <h4 style={{ marginBottom: '0.5rem', color: 'var(--primary)' }}>1. Dosya Yükle</h4>
               <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
                 MP3, WAV, FLAC veya diğer ses formatlarından birini yükleyin. Demucs AI modeli dosyanızı analiz edecek.
               </p>
             </div>
             <div style={{ padding: '1.2rem', borderRadius: '12px', background: 'rgba(168, 85, 247, 0.08)', border: '1px solid rgba(168, 85, 247, 0.2)' }}>
-              <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🧠</div>
+              <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>2</div>
               <h4 style={{ marginBottom: '0.5rem', color: 'var(--primary)' }}>2. AI Ayrıştırma</h4>
               <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
                 AI, şarkıyı vokal, davul, bas ve enstrümantallere ayırır. Bu işlem 2-5 dakika sürebilir.
               </p>
             </div>
             <div style={{ padding: '1.2rem', borderRadius: '12px', background: 'rgba(34, 197, 94, 0.08)', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
-              <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🎤</div>
+              <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>3</div>
               <h4 style={{ marginBottom: '0.5rem', color: 'var(--primary)' }}>3. Dinle & Düzenle</h4>
               <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
                 Her stem'i ayrı ayrı dinleyin. Solo/Mute ile kontrol edin. Volume ayarlayın.
               </p>
             </div>
             <div style={{ padding: '1.2rem', borderRadius: '12px', background: 'rgba(251, 191, 36, 0.08)', border: '1px solid rgba(251, 191, 36, 0.2)' }}>
-              <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🎯</div>
+              <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>4</div>
               <h4 style={{ marginBottom: '0.5rem', color: 'var(--primary)' }}>4. AI Efektler</h4>
               <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
                 AutoTune, Reverb, Pitch Shift, Tempo Değiştir gibi AI efektleri uygulayın.
               </p>
             </div>
             <div style={{ padding: '1.2rem', borderRadius: '12px', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-              <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>💾</div>
+              <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>5</div>
               <h4 style={{ marginBottom: '0.5rem', color: 'var(--primary)' }}>5. İndir</h4>
               <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
                 İstediğiniz stem'leri seçin ve yeni bir mix olarak WAV formatında indirin.
@@ -541,14 +541,14 @@ export default function StemMixer() {
           </div>
 
           <div style={{ padding: '1rem', borderRadius: '8px', background: 'rgba(99, 102, 241, 0.06)', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            <strong>💡 İpuçları:</strong>
+            <strong>İpuçları:</strong>
             <ul style={{ marginTop: '0.5rem', paddingLeft: '1.2rem', lineHeight: '1.8' }}>
               <li>Yüksek kaliteli dosyalar (WAV, FLAC) daha iyi sonuç verir</li>
               <li>İlk ayrıştırma daha uzun sürer (model yükleniyor), sonrakiler daha hızlıdır</li>
               <li>AutoTune en iyi vokal stem'inde çalışır</li>
               <li>Tempo değişikliği tüm stem'lere ayrı ayrı uygulanmalıdır</li>
               <li>Reverb eklemeden önce gürültü temizlemeyi deneyin</li>
-              <li>Daha detaylı düzenleme için <strong>🎛️ Studio</strong> sekmesini kullanın</li>
+              <li>Daha detaylı düzenleme için <strong>Studio</strong> sekmesini kullanın</li>
             </ul>
           </div>
         </div>
@@ -565,7 +565,7 @@ export default function StemMixer() {
           }
         }}
       >
-        <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🎵</div>
+        <div style={{ fontSize: '2rem', marginBottom: '1rem', opacity: 0.5 }}>+</div>
         <input
           type="file"
           accept="audio/*"
@@ -575,7 +575,7 @@ export default function StemMixer() {
           style={{ display: 'none' }}
         />
         <div style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '0.5rem' }}>
-          {audioFile ? `📁 ${audioFile.name}` : 'Müzik dosyası yüklemek için tıklayın'}
+          {audioFile ? `${audioFile.name}` : 'Müzik dosyası yüklemek için tıklayın'}
         </div>
         <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
           MP3, WAV, FLAC, OGG, M4A desteklenir
@@ -602,7 +602,7 @@ export default function StemMixer() {
       {/* Error / Success Messages */}
       {error && (
         <div style={{ padding: '1rem 1.5rem', marginBottom: '1.5rem', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444' }}>
-          ❌ {error}
+          {error}
         </div>
       )}
       {success && !loading && (
@@ -617,19 +617,19 @@ export default function StemMixer() {
           {/* Controls Bar */}
           <div className="card" style={{ padding: '1.2rem 1.5rem', marginBottom: '1.5rem', display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <button className="btn" onClick={handlePlay} style={{ fontSize: '1rem' }}>
-              {playing ? '⏸️ Duraklat' : '▶️ Tümünü Çal'}
+              {playing ? 'Duraklat' : 'Tümünü Çal'}
             </button>
             <button className="btn btn-secondary" onClick={exportMix} disabled={loading || selectedStems.length === 0}>
-              💾 Seçili Stemleri İndir ({selectedStems.length})
+              Seçili Stemleri İndir ({selectedStems.length})
             </button>
             <span style={{ marginLeft: 'auto', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              🎵 {stems.length} stem ayrıştırıldı
+              {stems.length} stem ayrıştırıldı
             </span>
           </div>
 
           {/* AI Effects Toolbar */}
           <div className="card" style={{ padding: '1.2rem 1.5rem', marginBottom: '1.5rem', background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.08), rgba(99, 102, 241, 0.05))' }}>
-            <h4 style={{ marginBottom: '1rem', fontSize: '1rem' }}>🤖 AI Efektler - Stem'e uygula</h4>
+            <h4 style={{ marginBottom: '1rem', fontSize: '1rem' }}>AI Efektler - Stem'e uygula</h4>
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
               {AI_EFFECTS.map(effect => (
                 <button
@@ -654,7 +654,7 @@ export default function StemMixer() {
             </div>
             {activeEffect && !effectTarget && (
               <div style={{ marginTop: '1rem', padding: '0.8rem', borderRadius: '8px', background: 'rgba(99, 102, 241, 0.08)', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                👆 Efekti uygulamak istediğiniz stem'deki <strong>"🎯 Efekt Uygula"</strong> butonuna tıklayın
+                Efekti uygulamak istediğiniz stem'deki <strong>"Efekt Uygula"</strong> butonuna tıklayın
               </div>
             )}
           </div>
@@ -665,7 +665,7 @@ export default function StemMixer() {
               <div key={stem.name} className="card" style={{ padding: '1.5rem', position: 'relative', border: effectTarget === stem.name ? '2px solid #a855f7' : undefined }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
                   <h3 style={{ fontSize: '1.2rem' }}>
-                    {STEM_ICONS[stem.name] || '🎵'} {stem.label}
+                    {STEM_ICONS[stem.name] || ''} {stem.label}
                   </h3>
                   <label style={{ fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                     <input type="checkbox" checked={selectedStems.includes(stem.name)} onChange={() => toggleSelectStem(stem.name)} />
@@ -682,7 +682,7 @@ export default function StemMixer() {
 
                 <div style={{ marginBottom: '1rem' }}>
                   <label className="input-label" style={{ fontSize: '0.85rem' }}>
-                    🔊 Volume: {Math.round(stem.volume * 100)}%
+                    Volume: {Math.round(stem.volume * 100)}%
                   </label>
                   <input
                     type="range" min="0" max="1" step="0.01"
@@ -698,14 +698,14 @@ export default function StemMixer() {
                     style={{ fontSize: '0.8rem', padding: '0.4rem 0.7rem' }}
                     onClick={() => toggleMute(stem.name)}
                   >
-                    {stem.muted ? '🔇 Muted' : '🔊 Active'}
+                    {stem.muted ? 'Muted' : 'Active'}
                   </button>
                   <button
                     className={`btn ${stem.solo ? '' : 'btn-secondary'}`}
                     style={{ fontSize: '0.8rem', padding: '0.4rem 0.7rem' }}
                     onClick={() => toggleSolo(stem.name)}
                   >
-                    {stem.solo ? '⭐ Solo' : '◯ Solo'}
+                    {stem.solo ? 'Solo' : 'Solo'}
                   </button>
                   {activeEffect && (
                     <button
@@ -713,7 +713,7 @@ export default function StemMixer() {
                       style={{ fontSize: '0.8rem', padding: '0.4rem 0.7rem', background: 'linear-gradient(135deg, #a855f7, #6366f1)' }}
                       onClick={() => openEffectPanel(stem.name, activeEffect)}
                     >
-                      🎯 Efekt Uygula
+                      Efekt Uygula
                     </button>
                   )}
                 </div>
@@ -729,7 +729,7 @@ export default function StemMixer() {
                     {activeEffect === 'autotune' && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
                         <div>
-                          <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>🎵 Anahtar (Key):</label>
+                          <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>Anahtar (Key):</label>
                           <select
                             value={effectParams.key || 'C'}
                             onChange={e => setEffectParams(p => ({ ...p, key: e.target.value }))}
@@ -739,7 +739,7 @@ export default function StemMixer() {
                           </select>
                         </div>
                         <div>
-                          <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>⚡ Düzeltme Hızı: {effectParams.speed || 5}</label>
+                          <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>Düzeltme Hızı: {effectParams.speed || 5}</label>
                           <input type="range" min="1" max="10" step="1" value={effectParams.speed || 5} onChange={e => setEffectParams(p => ({ ...p, speed: parseInt(e.target.value) }))} style={{ width: '100%' }} />
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                             <span>Yavaş (Doğal)</span>
@@ -752,7 +752,7 @@ export default function StemMixer() {
                     {/* Pitch Shift params */}
                     {activeEffect === 'pitch_shift' && (
                       <div>
-                        <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>🔀 Yarım Ton: {effectParams.semitones > 0 ? '+' : ''}{effectParams.semitones || 0}</label>
+                        <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>Yarım Ton: {effectParams.semitones > 0 ? '+' : ''}{effectParams.semitones || 0}</label>
                         <input type="range" min="-12" max="12" step="1" value={effectParams.semitones || 0} onChange={e => setEffectParams(p => ({ ...p, semitones: parseInt(e.target.value) }))} style={{ width: '100%' }} />
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                           <span>-12 (1 oktav aşağı)</span>
@@ -765,7 +765,7 @@ export default function StemMixer() {
                     {/* Tempo Change params */}
                     {activeEffect === 'tempo_change' && (
                       <div>
-                        <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>⏱️ Tempo: {Math.round((effectParams.factor || 1.0) * 100)}%</label>
+                        <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>Tempo: {Math.round((effectParams.factor || 1.0) * 100)}%</label>
                         <input type="range" min="0.5" max="2.0" step="0.05" value={effectParams.factor || 1.0} onChange={e => setEffectParams(p => ({ ...p, factor: parseFloat(e.target.value) }))} style={{ width: '100%' }} />
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                           <span>0.5x (Yavaş)</span>
@@ -779,11 +779,11 @@ export default function StemMixer() {
                     {activeEffect === 'reverb' && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
                         <div>
-                          <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>🏛️ Oda Boyutu: {Math.round((effectParams.room_size || 0.5) * 100)}%</label>
+                          <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>Oda Boyutu: {Math.round((effectParams.room_size || 0.5) * 100)}%</label>
                           <input type="range" min="0.1" max="1.0" step="0.05" value={effectParams.room_size || 0.5} onChange={e => setEffectParams(p => ({ ...p, room_size: parseFloat(e.target.value) }))} style={{ width: '100%' }} />
                         </div>
                         <div>
-                          <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>💧 Wet/Dry Mix: {Math.round((effectParams.wet || 0.3) * 100)}%</label>
+                          <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>Wet/Dry Mix: {Math.round((effectParams.wet || 0.3) * 100)}%</label>
                           <input type="range" min="0" max="1.0" step="0.05" value={effectParams.wet || 0.3} onChange={e => setEffectParams(p => ({ ...p, wet: parseFloat(e.target.value) }))} style={{ width: '100%' }} />
                         </div>
                       </div>
@@ -792,7 +792,7 @@ export default function StemMixer() {
                     {/* Noise Reduction params */}
                     {activeEffect === 'noise_reduction' && (
                       <div>
-                        <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>🔇 Gürültü Azaltma Gücü: {Math.round((effectParams.strength || 0.7) * 100)}%</label>
+                        <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>Gürültü Azaltma Gücü: {Math.round((effectParams.strength || 0.7) * 100)}%</label>
                         <input type="range" min="0.1" max="1.0" step="0.05" value={effectParams.strength || 0.7} onChange={e => setEffectParams(p => ({ ...p, strength: parseFloat(e.target.value) }))} style={{ width: '100%' }} />
                       </div>
                     )}
@@ -800,7 +800,7 @@ export default function StemMixer() {
                     {/* EQ Preset params */}
                     {activeEffect === 'eq_preset' && (
                       <div>
-                        <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.5rem' }}>📊 EQ Profili:</label>
+                        <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.5rem' }}>EQ Profili:</label>
                         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                           {EQ_PRESETS.map(p => (
                             <button
@@ -820,11 +820,11 @@ export default function StemMixer() {
                     {activeEffect === 'harmonizer' && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
                         <div>
-                          <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>🎶 Harmoni Aralığı: {effectParams.interval || 3} yarım ton</label>
+                          <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>Harmoni Aralığı: {effectParams.interval || 3} yarım ton</label>
                           <input type="range" min="1" max="12" step="1" value={effectParams.interval || 3} onChange={e => setEffectParams(p => ({ ...p, interval: parseInt(e.target.value) }))} style={{ width: '100%' }} />
                         </div>
                         <div>
-                          <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>🔊 Mix: {Math.round((effectParams.mix || 0.4) * 100)}%</label>
+                          <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>Mix: {Math.round((effectParams.mix || 0.4) * 100)}%</label>
                           <input type="range" min="0.1" max="0.8" step="0.05" value={effectParams.mix || 0.4} onChange={e => setEffectParams(p => ({ ...p, mix: parseFloat(e.target.value) }))} style={{ width: '100%' }} />
                         </div>
                       </div>
@@ -834,15 +834,15 @@ export default function StemMixer() {
                     {activeEffect === 'vocal_enhance' && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
                         <div>
-                          <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>☀️ Sıcaklık: {Math.round((effectParams.warmth || 0.5) * 100)}%</label>
+                          <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>Sıcaklık: {Math.round((effectParams.warmth || 0.5) * 100)}%</label>
                           <input type="range" min="0" max="1" step="0.05" value={effectParams.warmth || 0.5} onChange={e => setEffectParams(p => ({ ...p, warmth: parseFloat(e.target.value) }))} style={{ width: '100%' }} />
                         </div>
                         <div>
-                          <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>🎤 Presence: {Math.round((effectParams.presence || 0.5) * 100)}%</label>
+                          <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>Presence: {Math.round((effectParams.presence || 0.5) * 100)}%</label>
                           <input type="range" min="0" max="1" step="0.05" value={effectParams.presence || 0.5} onChange={e => setEffectParams(p => ({ ...p, presence: parseFloat(e.target.value) }))} style={{ width: '100%' }} />
                         </div>
                         <div>
-                          <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>✨ Air: {Math.round((effectParams.air || 0.3) * 100)}%</label>
+                          <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.3rem' }}>Air: {Math.round((effectParams.air || 0.3) * 100)}%</label>
                           <input type="range" min="0" max="1" step="0.05" value={effectParams.air || 0.3} onChange={e => setEffectParams(p => ({ ...p, air: parseFloat(e.target.value) }))} style={{ width: '100%' }} />
                         </div>
                       </div>
@@ -856,14 +856,14 @@ export default function StemMixer() {
                         style={{ flex: 1 }}
                         onClick={() => applyEffect(stem.name, activeEffect, effectParams)}
                       >
-                        {effectProcessing ? '⏳ İşleniyor...' : '✅ Uygula'}
+                        {effectProcessing ? 'İşleniyor...' : 'Uygula'}
                       </button>
                       <button
                         className="btn btn-secondary"
                         onClick={() => { setEffectTarget(null); setActiveEffect(null) }}
                         style={{ flex: 1 }}
                       >
-                        ❌ İptal
+                        İptal
                       </button>
                     </div>
                   </div>
@@ -877,7 +877,7 @@ export default function StemMixer() {
       {/* Empty State */}
       {!loading && stems.length === 0 && !error && (
         <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-muted)' }}>
-          <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🎵</div>
+          <div style={{ fontSize: '2rem', marginBottom: '1rem', opacity: 0.5 }}>&bull;</div>
           <p style={{ fontSize: '1.1rem' }}>Müzik dosyası yükleyerek başlayın</p>
           <p style={{ fontSize: '0.9rem', marginTop: '0.5rem' }}>AI, şarkınızı vokal, davul, bas ve enstrümantallere ayıracak</p>
         </div>

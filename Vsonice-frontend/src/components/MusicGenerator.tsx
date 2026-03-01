@@ -27,7 +27,7 @@ export default function MusicGenerator() {
 
   return (
     <div className="component-container">
-      <h2>🎹 Music Generator</h2>
+      <h2>Music Generator</h2>
       <p style={{ marginBottom: '2rem', color: '#888' }}>
         Generate music using AI with AudioCraft MusicGen
       </p>
@@ -71,13 +71,13 @@ export default function MusicGenerator() {
         </div>
 
         <button type="submit" className="btn" disabled={loading || !prompt}>
-          {loading ? '⏳ Generating...' : '🎵 Generate Music'}
+          {loading ? 'Generating...' : 'Generate Music'}
         </button>
       </form>
 
       {result && (
         <div className="status-message success-message" style={{ marginTop: '2rem' }}>
-          <h3>✅ Generation Started</h3>
+          <h3>Generation Started</h3>
           <pre style={{ textAlign: 'left', overflow: 'auto' }}>
             {JSON.stringify(result, null, 2)}
           </pre>
@@ -86,7 +86,7 @@ export default function MusicGenerator() {
 
       {error && (
         <div className="status-message error-message" style={{ marginTop: '2rem' }}>
-          <h3>❌ Error</h3>
+          <h3>Error</h3>
           <p>{error}</p>
         </div>
       )}

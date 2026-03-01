@@ -120,7 +120,7 @@ export default function AudioSeparator() {
       
       // Gerçek API çağrısı başlıyor
       const apiStartTime = Date.now()
-      updateStepStatus(2, 'processing', '📊 Her iki kanal için spektral analiz devam ediyor...')
+      updateStepStatus(2, 'processing', 'Her iki kanal için spektral analiz devam ediyor...')
       
       // Paralel olarak adımları güncelle
       const updateInterval = setInterval(() => {
@@ -129,16 +129,16 @@ export default function AudioSeparator() {
         const progress = Math.min(100, Math.floor((elapsed / estimatedSeconds) * 100))
         
         if (elapsed < estimatedSeconds * 0.2) {
-          updateStepStatus(2, 'processing', `🧠 Demucs AI model GPU'ya yükleniyor... ${progress}%`)
+          updateStepStatus(2, 'processing', `Demucs AI model GPU'ya yükleniyor... ${progress}%`)
         } else if (elapsed < estimatedSeconds * 0.7) {
           updateStepStatus(2, 'completed', '✓ AI model yüklendi')
-          updateStepStatus(3, 'processing', `🧠 Derin öğrenme ayrıştırma... ${progress}% (${remaining}sn kaldı)`)
+          updateStepStatus(3, 'processing', `Derin öğrenme ayrıştırma... ${progress}% (${remaining}sn kaldı)`)
         } else if (elapsed < estimatedSeconds * 0.9) {
           updateStepStatus(3, 'completed', '✓ AI ayrıştırma tamamlandı')
-          updateStepStatus(4, 'processing', `💾 Stem dosyaları kaydediliyor... ${progress}%`)
+          updateStepStatus(4, 'processing', `Stem dosyaları kaydediliyor... ${progress}%`)
         } else {
           updateStepStatus(4, 'completed', '✓ Stemler kaydedildi')
-          updateStepStatus(5, 'processing', `✨ 24-bit WAV dosyaları hazırlanıyor... ${progress}%`)
+          updateStepStatus(5, 'processing', `24-bit WAV dosyaları hazırlanıyor... ${progress}%`)
         }
       }, 1000)
 
@@ -154,7 +154,7 @@ export default function AudioSeparator() {
       updateStepStatus(5, 'completed', '✓ Dosyalar başarıyla hazırlandı!')
 
       const totalTime = Math.floor((Date.now() - startTime) / 1000)
-      console.log(`✅ Toplam işlem süresi: ${totalTime} saniye`)
+      console.log(`Toplam işlem süresi: ${totalTime} saniye`)
 
       setResult(response)
     } catch (err) {
@@ -189,7 +189,7 @@ export default function AudioSeparator() {
 
   return (
     <div className="component-container">
-      <h2>🎼 Vokal & Müzik Ayrıştırıcı</h2>
+      <h2>Vokal & Müzik Ayrıştırıcı</h2>
       <p style={{ marginBottom: '2rem', color: '#888' }}>
         Demucs AI derin öğrenme modeli ile profesyonel kalitede ses ayrıştırma
       </p>
@@ -229,7 +229,7 @@ export default function AudioSeparator() {
       {/* Step 1: File Upload */}
       {step === 1 && (
         <div className="card" style={{ padding: '3rem', textAlign: 'center', background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1))' }}>
-          <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>📁</div>
+          <div style={{ fontSize: '2rem', marginBottom: '1rem', opacity: 0.5 }}>+</div>
           <h3 style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>Ses Dosyası Yükle</h3>
           <p style={{ color: '#888', marginBottom: '2rem' }}>
             MP3, WAV, FLAC veya diğer ses formatlarını destekler
@@ -251,7 +251,7 @@ export default function AudioSeparator() {
             onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
             onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
           >
-            🎵 Dosya Seç
+            Dosya Seç
           </label>
           <input
             type="file"
@@ -264,7 +264,7 @@ export default function AudioSeparator() {
           {audioFile && (
             <div style={{ marginTop: '2rem', padding: '1.5rem', background: 'rgba(0, 0, 0, 0.2)', borderRadius: '12px' }}>
               <p style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>
-                ✅ <strong>{audioFile.name}</strong>
+                <strong>{audioFile.name}</strong>
               </p>
               <p style={{ color: '#888' }}>
                 Boyut: {(audioFile.size / 1024 / 1024).toFixed(2)} MB
@@ -281,7 +281,7 @@ export default function AudioSeparator() {
 
           {error && (
             <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px', color: '#f87171' }}>
-              ⚠️ {error}
+              {error}
             </div>
           )}
         </div>
@@ -297,7 +297,7 @@ export default function AudioSeparator() {
             ← Geri
           </button>
 
-          <h3 style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>🎛️ Model ve Ayarlar</h3>
+          <h3 style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>Model ve Ayarlar</h3>
 
           <div className="form-group">
             <label htmlFor="modelSelect" style={{ fontSize: '1.1rem', marginBottom: '0.5rem', display: 'block' }}>
@@ -315,7 +315,7 @@ export default function AudioSeparator() {
               ) : (
                 availableModels.map((model) => (
                   <option key={model.name} value={model.name}>
-                    {model.name} {model.recommended && '⭐'}
+                    {model.name} {model.recommended && '★'}
                   </option>
                 ))
               )}
@@ -325,7 +325,7 @@ export default function AudioSeparator() {
           {selectedModelInfo && (
             <div style={{ marginTop: '1.5rem', padding: '2rem', background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.15))', borderRadius: '12px', border: '2px solid rgba(99, 102, 241, 0.4)' }}>
               <h4 style={{ fontSize: '1.3rem', marginBottom: '1rem', color: 'var(--primary-color)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                📊 Model Özellikleri
+                Model Özellikleri
               </h4>
               <p style={{ color: '#ccc', marginBottom: '1.5rem', fontSize: '1rem', lineHeight: '1.6' }}>
                 {selectedModelInfo.description}
@@ -333,7 +333,7 @@ export default function AudioSeparator() {
               
               {selectedModelInfo.features && (
                 <div style={{ marginBottom: '1.5rem' }}>
-                  <strong style={{ display: 'block', marginBottom: '0.75rem', fontSize: '1rem' }}>✨ Özellikler:</strong>
+                  <strong style={{ display: 'block', marginBottom: '0.75rem', fontSize: '1rem' }}>Özellikler:</strong>
                   <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                     {selectedModelInfo.features.map((feature: string, idx: number) => (
                       <li key={idx} style={{ 
@@ -351,7 +351,7 @@ export default function AudioSeparator() {
               )}
               
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <strong style={{ width: '100%', marginBottom: '0.5rem', fontSize: '1rem' }}>🎵 Çıktı Parçaları:</strong>
+                <strong style={{ width: '100%', marginBottom: '0.5rem', fontSize: '1rem' }}>Çıktı Parçaları:</strong>
                 {selectedModelInfo.stems.map((stem: string) => (
                   <span
                     key={stem}
@@ -367,13 +367,6 @@ export default function AudioSeparator() {
                       gap: '0.5rem'
                     }}
                   >
-                    {stem === 'vocals' && '🎤'}
-                    {stem === 'music' && '🎼'}
-                    {stem === 'drums' && '🥁'}
-                    {stem === 'bass' && '🎸'}
-                    {stem === 'other' && '🎵'}
-                    {stem === 'piano' && '🎹'}
-                    {stem === 'guitar' && '🎸'}
                     {stem === 'vocals' && 'Vokal'}
                     {stem === 'music' && 'Müzik'}
                     {stem === 'drums' && 'Davul'}
@@ -398,7 +391,7 @@ export default function AudioSeparator() {
 
           {error && (
             <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px', color: '#f87171' }}>
-              ⚠️ {error}
+              {error}
             </div>
           )}
         </div>
@@ -417,7 +410,7 @@ export default function AudioSeparator() {
               </button>
 
               <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-                <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🚀</div>
+                <div style={{ fontSize: '2rem', marginBottom: '1rem', opacity: 0.5 }}>&bull;</div>
                 <h3 style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>Hazır!</h3>
                 <p style={{ color: '#888', marginBottom: '1rem' }}>
                   Dosya: <strong>{audioFile?.name}</strong>
@@ -432,7 +425,7 @@ export default function AudioSeparator() {
                 className="btn"
                 style={{ width: '100%', fontSize: '1.2rem', padding: '1.2rem' }}
               >
-                🎼 Ayrıştırmayı Başlat
+                Ayrıştırmayı Başlat
               </button>
             </>
           )}
@@ -440,7 +433,7 @@ export default function AudioSeparator() {
           {loading && (
             <div>
               <h3 style={{ fontSize: '1.5rem', marginBottom: '2rem', textAlign: 'center' }}>
-                ⏳ Ayrıştırma Devam Ediyor...
+                Ayrıştırma Devam Ediyor...
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 {processingSteps.map((processStep) => (
@@ -488,7 +481,7 @@ export default function AudioSeparator() {
                         }}
                       >
                         {processStep.status === 'completed' && '✓'}
-                        {processStep.status === 'processing' && '⏳'}
+                        {processStep.status === 'processing' && '•'}
                         {processStep.status === 'error' && '✗'}
                         {processStep.status === 'pending' && processStep.id}
                       </div>
@@ -510,7 +503,7 @@ export default function AudioSeparator() {
           {result && (
             <div style={{ marginTop: '2rem' }}>
               <div style={{ textAlign: 'center', marginBottom: '2rem', padding: '2rem', background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.2))', borderRadius: '12px' }}>
-                <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>✅</div>
+                <div style={{ fontSize: '2rem', marginBottom: '1rem', color: 'var(--success-color)' }}>✓</div>
                 <h3 style={{ fontSize: '1.8rem', color: 'var(--success-color)', marginBottom: '0.5rem' }}>
                   Ayrıştırma Başarıyla Tamamlandı!
                 </h3>
@@ -519,7 +512,7 @@ export default function AudioSeparator() {
                 </p>
               </div>
 
-              <h4 style={{ fontSize: '1.3rem', marginBottom: '1.5rem' }}>📁 Ayrıştırılan Ses Parçaları</h4>
+              <h4 style={{ fontSize: '1.3rem', marginBottom: '1.5rem' }}>Ayrıştırılan Ses Parçaları</h4>
               <div className="grid grid-2" style={{ gap: '1.5rem', marginBottom: '2rem' }}>
                 {result.stems?.map((stem: string) => (
                   <div
@@ -535,12 +528,12 @@ export default function AudioSeparator() {
                     onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.03)'}
                     onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                   >
-                    <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>
-                      {stem === 'vocals' && '🎤'}
-                      {stem === 'music' && '🎼'}
-                      {stem === 'drums' && '🥁'}
-                      {stem === 'bass' && '🎸'}
-                      {stem === 'other' && '🎵'}
+                    <div style={{ fontSize: '1.5rem', marginBottom: '1rem', textTransform: 'capitalize' }}>
+                      {stem === 'vocals' && 'Vokal'}
+                      {stem === 'music' && 'Müzik'}
+                      {stem === 'drums' && 'Davul'}
+                      {stem === 'bass' && 'Bas'}
+                      {stem === 'other' && 'Diğer'}
                     </div>
                     <h5 style={{ fontSize: '1.2rem', marginBottom: '1rem', textTransform: 'capitalize', fontWeight: '600' }}>
                       {stem === 'vocals' && 'Vokal'}
@@ -558,7 +551,7 @@ export default function AudioSeparator() {
                         window.open(downloadUrl, '_blank')
                       }}
                     >
-                      📥 WAV İndir
+                      WAV İndir
                     </button>
                   </div>
                 ))}
@@ -570,7 +563,7 @@ export default function AudioSeparator() {
                   className="btn btn-secondary"
                   style={{ flex: 1, fontSize: '1rem', padding: '1rem' }}
                 >
-                  🔄 Yeni Dosya Yükle
+                  Yeni Dosya Yükle
                 </button>
                 <button
                   onClick={() => {
@@ -580,17 +573,17 @@ export default function AudioSeparator() {
                   className="btn"
                   style={{ flex: 1, fontSize: '1rem', padding: '1rem', background: 'linear-gradient(135deg, #10b981, #059669)' }}
                 >
-                  🎛️ Stem Mixer'a Git
+                  Stem Mixer'a Git
                 </button>
               </div>
 
               <details style={{ marginTop: '1.5rem' }}>
                 <summary style={{ cursor: 'pointer', color: 'var(--primary-color)', fontWeight: '600', padding: '0.5rem' }}>
-                  🔍 Teknik Detaylar
+                  Teknik Detaylar
                 </summary>
                 <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(0, 0, 0, 0.3)', borderRadius: '8px' }}>
                   <p style={{ fontSize: '0.9rem', color: '#888', marginBottom: '0.5rem' }}>
-                    💾 Kayıt Konumu: <code>{result.input_path?.replace('.mp3', '/') || 'output/separated/'}</code>
+                    Kayıt Konumu: <code>{result.input_path?.replace('.mp3', '/') || 'output/separated/'}</code>
                   </p>
                   <pre style={{ fontSize: '0.85rem', color: '#aaa', overflow: 'auto', marginTop: '0.5rem' }}>
                     {JSON.stringify(result, null, 2)}
@@ -604,48 +597,11 @@ export default function AudioSeparator() {
 
       {error && !loading && (
         <div style={{ marginTop: '2rem', padding: '1.5rem', background: 'rgba(239, 68, 68, 0.15)', borderRadius: '12px', border: '2px solid #ef4444' }}>
-          <h4 style={{ color: '#f87171', marginBottom: '0.5rem' }}>❌ Hata Oluştu</h4>
+          <h4 style={{ color: '#f87171', marginBottom: '0.5rem' }}>Hata Oluştu</h4>
           <p style={{ color: '#fca5a5' }}>{error}</p>
         </div>
       )}
 
-      <div style={{ marginTop: '3rem', padding: '2rem', background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1))', borderRadius: '12px', border: '1px solid rgba(99, 102, 241, 0.3)' }}>
-        <h3 style={{ marginBottom: '1rem', fontSize: '1.3rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          🧠 Demucs AI Ayrıştırma Teknolojisi
-        </h3>
-        <p style={{ color: '#aaa', lineHeight: '1.7', marginBottom: '1rem', fontSize: '1rem' }}>
-          Meta (Facebook Research) tarafından geliştirilen <strong style={{ color: '#a5b4fc' }}>Demucs Derin Öğrenme Modeli</strong> ile 
-          profesyonel kalitede ses ayrıştırma - vocalremover.org ile aynı teknoloji:
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginTop: '1.5rem' }}>
-          <div style={{ padding: '1rem', background: 'rgba(0, 0, 0, 0.3)', borderRadius: '8px', border: '1px solid rgba(99, 102, 241, 0.2)' }}>
-            <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>🧠</div>
-            <strong style={{ display: 'block', marginBottom: '0.5rem', color: '#c4b5fd' }}>Hybrid Transformer</strong>
-            <p style={{ fontSize: '0.9rem', color: '#888' }}>Derin öğrenme mimarisi ile yüksek doğruluk</p>
-          </div>
-          <div style={{ padding: '1rem', background: 'rgba(0, 0, 0, 0.3)', borderRadius: '8px', border: '1px solid rgba(99, 102, 241, 0.2)' }}>
-            <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>🚀</div>
-            <strong style={{ display: 'block', marginBottom: '0.5rem', color: '#c4b5fd' }}>GPU Hızlandırma</strong>
-            <p style={{ fontSize: '0.9rem', color: '#888' }}>NVIDIA RTX GPU ile saniyeler içinde ayrıştırma</p>
-          </div>
-          <div style={{ padding: '1rem', background: 'rgba(0, 0, 0, 0.3)', borderRadius: '8px', border: '1px solid rgba(99, 102, 241, 0.2)' }}>
-            <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>🎤</div>
-            <strong style={{ display: 'block', marginBottom: '0.5rem', color: '#c4b5fd' }}>4+ Stem Ayrıştırma</strong>
-            <p style={{ fontSize: '0.9rem', color: '#888' }}>Vokal, davul, bas, diğer + tam enstrümantal</p>
-          </div>
-          <div style={{ padding: '1rem', background: 'rgba(0, 0, 0, 0.3)', borderRadius: '8px', border: '1px solid rgba(99, 102, 241, 0.2)' }}>
-            <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>💎</div>
-            <strong style={{ display: 'block', marginBottom: '0.5rem', color: '#c4b5fd' }}>Stüdyo Kalitesi</strong>
-            <p style={{ fontSize: '0.9rem', color: '#888' }}>44.1kHz 24-bit stereo WAV çıkış</p>
-          </div>
-        </div>
-        <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(16, 185, 129, 0.1)', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-          <p style={{ color: '#6ee7b7', fontSize: '0.95rem', margin: 0 }}>
-            💡 <strong>İpucu:</strong> Demucs AI modeli ilk kullanımda indirilir (~80MB). Sonraki kullanımlarda önbellekten yüklenir.
-            RTX GPU ile ~10-30 saniyede profesyonel kalitede ayrıştırma yapılır.
-          </p>
-        </div>
-      </div>
     </div>
   )
 }

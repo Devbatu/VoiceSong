@@ -104,18 +104,18 @@ const TRACK_COLORS = [
 ]
 
 const EFFECT_LABELS: Record<EffectType, { icon: string; label: string; description: string }> = {
-  eq: { icon: '📊', label: 'Ekolayzır (EQ)', description: 'Low/Mid/High frekans kontrolü' },
-  compressor: { icon: '🔧', label: 'Kompresör', description: 'Dinamik aralık sıkıştırma' },
-  reverb: { icon: '🏛️', label: 'Reverb', description: 'Mekan yankısı efekti' },
-  delay: { icon: '🔄', label: 'Delay', description: 'Yankı/gecikme efekti' },
-  chorus: { icon: '🎶', label: 'Chorus', description: 'Ses kalınlaştırma efekti' },
-  distortion: { icon: '⚡', label: 'Distortion', description: 'Bozulma/overdrive efekti' },
-  noiseGate: { icon: '🚫', label: 'Noise Gate', description: 'Gürültü kapısı - sessiz kısımları temizler' },
-  deEsser: { icon: '🐍', label: 'De-Esser', description: 'Tıslama seslerini azaltır (S, Ş, Z)' },
-  autotune: { icon: '🎯', label: 'Autotune', description: 'Otomatik pitch düzeltme' },
-  phaser: { icon: '🌀', label: 'Phaser', description: 'Faz kaydırma efekti' },
-  flanger: { icon: '🌊', label: 'Flanger', description: 'Uçak sesi benzeri efekt' },
-  stereoWidener: { icon: '↔️', label: 'Stereo Genişletici', description: 'Stereo görüntüyü genişletir' },
+  eq: { icon: '', label: 'Ekolayzır (EQ)', description: 'Low/Mid/High frekans kontrolü' },
+  compressor: { icon: '', label: 'Kompresör', description: 'Dinamik aralık sıkıştırma' },
+  reverb: { icon: '', label: 'Reverb', description: 'Mekan yankısı efekti' },
+  delay: { icon: '', label: 'Delay', description: 'Yankı/gecikme efekti' },
+  chorus: { icon: '', label: 'Chorus', description: 'Ses kalınlaştırma efekti' },
+  distortion: { icon: '', label: 'Distortion', description: 'Bozulma/overdrive efekti' },
+  noiseGate: { icon: '', label: 'Noise Gate', description: 'Gürültü kapısı - sessiz kısımları temizler' },
+  deEsser: { icon: '', label: 'De-Esser', description: 'Tıslama seslerini azaltır (S, Ş, Z)' },
+  autotune: { icon: '', label: 'Autotune', description: 'Otomatik pitch düzeltme' },
+  phaser: { icon: '', label: 'Phaser', description: 'Faz kaydırma efekti' },
+  flanger: { icon: '', label: 'Flanger', description: 'Uçak sesi benzeri efekt' },
+  stereoWidener: { icon: '', label: 'Stereo Genişletici', description: 'Stereo görüntüyü genişletir' },
 }
 
 const MUSICAL_KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
@@ -143,12 +143,22 @@ export default function ProfessionalStudio() {
   const [isLooping, setIsLooping] = useState(false)
   const [bpm, setBpm] = useState(120)
   const [masterVU, setMasterVU] = useState(0)
-  const [activeSection, setActiveSection] = useState<'mixer' | 'effects' | 'noise' | 'export'>('mixer')
+  const [activeSection, setActiveSection] = useState<'mixer' | 'effects' | 'separate' | 'noise' | 'export'>('mixer')
   const [isExporting, setIsExporting] = useState(false)
   const [exportProgress, setExportProgress] = useState('')
   const [noiseReductionStrength, setNoiseReductionStrength] = useState(0.5)
   const [isProcessingNoise, setIsProcessingNoise] = useState(false)
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null)
+
+  // Vocal preset state
+  const [presetIntensity, setPresetIntensity] = useState(0.7)
+  const [activePreset, setActivePreset] = useState<string | null>(null)
+
+  // Stem separation state
+  const [separationFile, setSeparationFile] = useState<File | null>(null)
+  const [isSeparating, setIsSeparating] = useState(false)
+  const [separationProgress, setSeparationProgress] = useState(0)
+  const [separationResult, setSeparationResult] = useState<any>(null)
 
   const startTimeRef = useRef(0)
   const pauseOffsetRef = useRef(0)
@@ -605,6 +615,33 @@ export default function ProfessionalStudio() {
     else playAll()
   }
 
+  // --- Rebuild audio graph live (for real-time effect changes) ---
+  const rebuildLive = useCallback(() => {
+    if (!isPlaying || !audioCtxRef.current) return
+    const ctx = audioCtxRef.current
+    const elapsed = ctx.currentTime - startTimeRef.current + pauseOffsetRef.current
+
+    const newTracks = tracksRef.current.map(t => {
+      if (!t.audioBuffer) return t
+      // Stop old source
+      try { t.sourceNode?.stop() } catch { /* ignore */ }
+      // Build new graph
+      const graph = createTrackAudioGraph(t, ctx)
+      if (!graph) return t
+      graph.source.start(0, elapsed)
+      return {
+        ...t,
+        sourceNode: graph.source,
+        gainNode: graph.gain,
+        panNode: graph.pan,
+        analyserNode: graph.analyser
+      }
+    })
+    setTracks(newTracks)
+    startTimeRef.current = ctx.currentTime
+    pauseOffsetRef.current = elapsed
+  }, [isPlaying, createTrackAudioGraph, startVUAnimation])
+
   // --- Add track ---
   const addTrack = (type: StudioTrack['type'] = 'other', name?: string) => {
     const id = Date.now().toString()
@@ -676,6 +713,8 @@ export default function ProfessionalStudio() {
     setTracks(prev => prev.map(t =>
       t.id === trackId ? { ...t, effects: [...t.effects, effect] } : t
     ))
+    // Rebuild live if playing
+    setTimeout(() => rebuildLive(), 50)
   }
 
   // --- Remove effect ---
@@ -683,6 +722,7 @@ export default function ProfessionalStudio() {
     setTracks(prev => prev.map(t =>
       t.id === trackId ? { ...t, effects: t.effects.filter(e => e.id !== effectId) } : t
     ))
+    setTimeout(() => rebuildLive(), 50)
   }
 
   // --- Toggle effect ---
@@ -693,9 +733,11 @@ export default function ProfessionalStudio() {
         effects: t.effects.map(e => e.id === effectId ? { ...e, enabled: !e.enabled } : e)
       } : t
     ))
+    setTimeout(() => rebuildLive(), 50)
   }
 
   // --- Update effect params ---
+  const updateEffectParamsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const updateEffectParams = (trackId: string, effectId: string, params: Partial<EffectParams>) => {
     setTracks(prev => prev.map(t =>
       t.id === trackId ? {
@@ -703,6 +745,9 @@ export default function ProfessionalStudio() {
         effects: t.effects.map(e => e.id === effectId ? { ...e, params: { ...e.params, ...params } } : e)
       } : t
     ))
+    // Debounced rebuild for live parameter tweaking
+    if (updateEffectParamsDebounceRef.current) clearTimeout(updateEffectParamsDebounceRef.current)
+    updateEffectParamsDebounceRef.current = setTimeout(() => rebuildLive(), 120)
   }
 
   // --- Draw waveform on canvas ---
@@ -802,6 +847,170 @@ export default function ProfessionalStudio() {
     }
   }
 
+  // --- Server-side effect application ---
+  const applyServerEffect = async (trackId: string, effectType: string, params: Record<string, any>) => {
+    const track = tracks.find(t => t.id === trackId)
+    if (!track?.audioFile) return
+    updateTrack(trackId, { isProcessing: true })
+    setStatusMessage({ type: 'info', text: `${effectType} uygulanıyor...` })
+    try {
+      const formData = new FormData()
+      formData.append('audio_file', track.audioFile)
+      formData.append('effect_type', effectType)
+      formData.append('params_json', JSON.stringify(params))
+      const response = await fetch(`${API_BASE}/api/studio/apply-effect`, {
+        method: 'POST',
+        body: formData
+      })
+      if (!response.ok) throw new Error(`${effectType} failed`)
+      const blob = await response.blob()
+      const newFile = new File([blob], `${effectType}_${track.audioFile.name}`, { type: 'audio/wav' })
+      await loadAudioFile(trackId, newFile)
+      setStatusMessage({ type: 'success', text: `${effectType} başarıyla uygulandı!` })
+      // Restart playback with new audio
+      if (isPlaying) {
+        setTimeout(() => { pauseAll(); setTimeout(() => playAll(), 50) }, 100)
+      }
+    } catch (err) {
+      console.error(err)
+      setStatusMessage({ type: 'error', text: `${effectType} başarısız oldu` })
+    } finally {
+      updateTrack(trackId, { isProcessing: false })
+      setTimeout(() => setStatusMessage(null), 4000)
+    }
+  }
+
+  // --- Professional vocal preset application ---
+  const applyVocalPreset = async (trackId: string, preset: string) => {
+    const track = tracks.find(t => t.id === trackId)
+    if (!track?.audioFile) return
+    updateTrack(trackId, { isProcessing: true })
+    setActivePreset(preset)
+    setStatusMessage({ type: 'info', text: `"${preset}" preset uygulanıyor... Lütfen bekleyin.` })
+    try {
+      const formData = new FormData()
+      formData.append('audio_file', track.audioFile)
+      formData.append('preset', preset)
+      formData.append('params_json', JSON.stringify({ intensity: presetIntensity }))
+      const response = await fetch(`${API_BASE}/api/studio/apply-vocal-preset`, {
+        method: 'POST',
+        body: formData
+      })
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}))
+        throw new Error(errData.detail || `Preset "${preset}" failed`)
+      }
+      const blob = await response.blob()
+      const newFile = new File([blob], `${preset}_${track.audioFile.name}`, { type: 'audio/wav' })
+      await loadAudioFile(trackId, newFile)
+      setStatusMessage({ type: 'success', text: `"${preset}" preset başarıyla uygulandı!` })
+      if (isPlaying) {
+        setTimeout(() => { pauseAll(); setTimeout(() => playAll(), 50) }, 100)
+      }
+    } catch (err: any) {
+      console.error(err)
+      setStatusMessage({ type: 'error', text: `Preset başarısız: ${err.message || preset}` })
+    } finally {
+      updateTrack(trackId, { isProcessing: false })
+      setActivePreset(null)
+      setTimeout(() => setStatusMessage(null), 5000)
+    }
+  }
+
+  // --- Stem separation ---
+  const separateStems = async () => {
+    if (!separationFile) return
+    setIsSeparating(true)
+    setSeparationProgress(0)
+    setSeparationResult(null)
+    setStatusMessage({ type: 'info', text: 'AI ile şarkı ayrıştırılıyor... Bu işlem 3-10 dakika sürebilir.' })
+
+    const progressInterval = setInterval(() => {
+      setSeparationProgress(prev => {
+        if (prev >= 90) return 90
+        if (prev < 15) return prev + 1.5
+        if (prev < 50) return prev + 0.5
+        if (prev < 80) return prev + 0.3
+        return prev + 0.1
+      })
+    }, 2000)
+
+    try {
+      const formData = new FormData()
+      formData.append('audio_file', separationFile)
+      formData.append('model', 'htdemucs')
+
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 1800000) // 30 min
+
+      const response = await fetch(`${API_BASE}/api/studio/separate-stems`, {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal,
+      })
+      clearTimeout(timeoutId)
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null)
+        throw new Error(errorData?.detail || 'Stem separation failed')
+      }
+
+      const result = await response.json()
+      clearInterval(progressInterval)
+      setSeparationProgress(100)
+      setSeparationResult(result)
+      setStatusMessage({ type: 'success', text: `${result.stems.length} stem başarıyla ayrıldı!` })
+    } catch (err) {
+      console.error(err)
+      const msg = err instanceof Error && err.name === 'AbortError'
+        ? 'İşlem zaman aşımına uğradı (30 dakika).'
+        : err instanceof Error ? err.message : 'Ayrıştırma başarısız'
+      setStatusMessage({ type: 'error', text: msg })
+    } finally {
+      clearInterval(progressInterval)
+      setIsSeparating(false)
+    }
+  }
+
+  // --- Import separated stems as tracks ---
+  const importStemsAsTracks = async (stems: any[]) => {
+    setStatusMessage({ type: 'info', text: 'Stemler track\'lere yükleniyor...' })
+    for (const stem of stems) {
+      const trackType = stem.type as StudioTrack['type']
+      const trackName = stem.name === 'vocals' ? 'Vokal' :
+                         stem.name === 'drums' ? 'Davul' :
+                         stem.name === 'bass' ? 'Bass' :
+                         stem.name === 'other' ? 'Diğer' :
+                         stem.name === 'music' ? 'Müzik' :
+                         stem.name
+
+      // Create track
+      const id = Date.now().toString() + '_' + stem.name
+      const color = TRACK_COLORS[tracks.length % TRACK_COLORS.length]
+      const newTrack: StudioTrack = {
+        id, name: trackName, type: trackType, color,
+        volume: 75, pan: 0, muted: false, solo: false,
+        effects: [], audioFile: null, audioBuffer: null,
+        sourceNode: null, gainNode: null, panNode: null,
+        analyserNode: null, waveformData: [], vuLevel: 0, isProcessing: false
+      }
+      setTracks(prev => [...prev, newTrack])
+
+      // Download the stem audio and load it
+      try {
+        const res = await fetch(`${API_BASE}${stem.download_url}`)
+        const blob = await res.blob()
+        const file = new File([blob], `${stem.name}.wav`, { type: 'audio/wav' })
+        await loadAudioFile(id, file)
+      } catch (err) {
+        console.error(`Failed to load stem ${stem.name}:`, err)
+      }
+    }
+    setStatusMessage({ type: 'success', text: 'Tüm stemler yüklendi! Artık her birini ayrı ayrı düzenleyebilirsiniz.' })
+    setActiveSection('mixer')
+    setTimeout(() => setStatusMessage(null), 5000)
+  }
+
   // --- Export mix ---
   const exportMix = async () => {
     const tracksWithAudio = tracks.filter(t => t.audioFile)
@@ -861,14 +1070,14 @@ export default function ProfessionalStudio() {
   return (
     <div className="component-container studio-container">
       <div className="studio-title-bar">
-        <h2>🎛️ Professional Audio Studio</h2>
+        <h2>Professional Audio Studio</h2>
         <p>FL Studio tarzı tam teşekküllü ses düzenleme, efekt uygulama ve miksaj ortamı</p>
       </div>
 
       {/* Status Message */}
       {statusMessage && (
         <div className={`studio-status studio-status-${statusMessage.type}`}>
-          <span>{statusMessage.type === 'success' ? '✅' : statusMessage.type === 'error' ? '❌' : 'ℹ️'}</span>
+          <span>{statusMessage.type === 'success' ? '✓' : statusMessage.type === 'error' ? '✗' : 'i'}</span>
           <span>{statusMessage.text}</span>
         </div>
       )}
@@ -876,16 +1085,19 @@ export default function ProfessionalStudio() {
       {/* Section Tabs */}
       <div className="studio-section-tabs">
         <button className={`studio-tab ${activeSection === 'mixer' ? 'active' : ''}`} onClick={() => setActiveSection('mixer')}>
-          🎛️ Mixer & Track'ler
+          Mixer & Track'ler
+        </button>
+        <button className={`studio-tab ${activeSection === 'separate' ? 'active' : ''}`} onClick={() => setActiveSection('separate')}>
+          AI Stem Ayrıştır
         </button>
         <button className={`studio-tab ${activeSection === 'effects' ? 'active' : ''}`} onClick={() => setActiveSection('effects')}>
-          🎚️ Efektler & EQ
+          Efektler & EQ
         </button>
         <button className={`studio-tab ${activeSection === 'noise' ? 'active' : ''}`} onClick={() => setActiveSection('noise')}>
-          🚫 Gürültü Azaltma
+          Gürültü Azaltma
         </button>
         <button className={`studio-tab ${activeSection === 'export' ? 'active' : ''}`} onClick={() => setActiveSection('export')}>
-          📥 Mix & Dışa Aktar
+          Mix & Dışa Aktar
         </button>
       </div>
 
@@ -893,11 +1105,11 @@ export default function ProfessionalStudio() {
       <div className="transport-panel">
         <div className="transport-controls">
           <div className="transport-buttons">
-            <button className="transport-btn" onClick={stopAll} title="Stop">⏹️</button>
+            <button className="transport-btn" onClick={stopAll} title="Stop">■</button>
             <button className={`transport-btn play-btn ${isPlaying ? 'active' : ''}`} onClick={togglePlayPause} title={isPlaying ? 'Pause' : 'Play'}>
-              {isPlaying ? '⏸️' : '▶️'}
+              {isPlaying ? '‖' : '▶'}
             </button>
-            <button className={`transport-btn ${isLooping ? 'active' : ''}`} onClick={() => setIsLooping(!isLooping)} title="Loop">🔁</button>
+            <button className={`transport-btn ${isLooping ? 'active' : ''}`} onClick={() => setIsLooping(!isLooping)} title="Loop">↻</button>
           </div>
 
           <div className="transport-info">
@@ -954,20 +1166,20 @@ export default function ProfessionalStudio() {
       {activeSection === 'mixer' && (
         <div className="studio-section">
           <div className="section-header">
-            <h3>🎛️ Mixer & Track Yönetimi</h3>
+            <h3>Mixer & Track Yönetimi</h3>
             <div className="add-track-buttons">
-              <button onClick={() => addTrack('vocal', 'Vokal')} className="effect-add-btn">🎤 Vokal Ekle</button>
-              <button onClick={() => addTrack('instrumental', 'Enstrümantal')} className="effect-add-btn">🎵 Müzik Ekle</button>
-              <button onClick={() => addTrack('drums', 'Davul')} className="effect-add-btn">🥁 Davul Ekle</button>
-              <button onClick={() => addTrack('bass', 'Bass')} className="effect-add-btn">🎸 Bass Ekle</button>
-              <button onClick={() => addTrack('fx', 'FX')} className="effect-add-btn">✨ FX Ekle</button>
-              <button onClick={() => addTrack('other')} className="effect-add-btn">➕ Boş Track</button>
+              <button onClick={() => addTrack('vocal', 'Vokal')} className="effect-add-btn">Vokal Ekle</button>
+              <button onClick={() => addTrack('instrumental', 'Enstrümantal')} className="effect-add-btn">Müzik Ekle</button>
+              <button onClick={() => addTrack('drums', 'Davul')} className="effect-add-btn">Davul Ekle</button>
+              <button onClick={() => addTrack('bass', 'Bass')} className="effect-add-btn">Bass Ekle</button>
+              <button onClick={() => addTrack('fx', 'FX')} className="effect-add-btn">FX Ekle</button>
+              <button onClick={() => addTrack('other')} className="effect-add-btn">+ Boş Track</button>
             </div>
           </div>
 
           {tracks.length === 0 ? (
             <div className="empty-state">
-              <div className="empty-icon">🎵</div>
+              <div className="empty-icon">•</div>
               <h4>Henüz track eklenmedi</h4>
               <p>Yukarıdaki butonlardan yeni bir track ekleyin ve ses dosyanızı yükleyin</p>
             </div>
@@ -1001,12 +1213,12 @@ export default function ProfessionalStudio() {
                   {/* Volume & Pan */}
                   <div className="track-controls-col">
                     <div className="track-slider-row">
-                      <span className="slider-icon">🔊</span>
+                      <span className="slider-icon">VOL</span>
                       <input type="range" min={0} max={100} value={track.volume} onChange={e => { e.stopPropagation(); updateTrack(track.id, { volume: Number(e.target.value) }) }} className="track-slider" />
                       <span className="slider-val">{track.volume}</span>
                     </div>
                     <div className="track-slider-row">
-                      <span className="slider-icon">↔️</span>
+                      <span className="slider-icon">PAN</span>
                       <input type="range" min={-100} max={100} value={track.pan} onChange={e => { e.stopPropagation(); updateTrack(track.id, { pan: Number(e.target.value) }) }} className="track-slider pan-slider" />
                       <span className="slider-val">{track.pan === 0 ? 'C' : track.pan < 0 ? `L${Math.abs(track.pan)}` : `R${track.pan}`}</span>
                     </div>
@@ -1049,7 +1261,7 @@ export default function ProfessionalStudio() {
                           input.click()
                         }}
                       >
-                        <span>📂 Ses dosyası yükle veya sürükle</span>
+                        <span>Ses dosyası yükle veya sürükle</span>
                       </div>
                     )}
                   </div>
@@ -1066,19 +1278,148 @@ export default function ProfessionalStudio() {
         </div>
       )}
 
+      {/* ======== AI STEM SEPARATION ======== */}
+      {activeSection === 'separate' && (
+        <div className="studio-section">
+          <div className="section-header">
+            <h3>AI ile Şarkı Parçalama (Demucs)</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+              Bir şarkı yükleyin, AI vokal, davul, bas ve diğer enstrümanları otomatik ayırsın. 
+              Her parça ayrı track olarak stüdyoya eklenir.
+            </p>
+          </div>
+
+          <div style={{ maxWidth: '700px', margin: '0 auto' }}>
+            {/* Upload Area */}
+            <div
+              className="upload-area"
+              style={{ marginBottom: '1.5rem' }}
+              onClick={() => {
+                const input = document.createElement('input')
+                input.type = 'file'
+                input.accept = 'audio/*'
+                input.onchange = (ev: any) => {
+                  const file = ev.target.files[0]
+                  if (file) {
+                    setSeparationFile(file)
+                    setSeparationResult(null)
+                    setSeparationProgress(0)
+                  }
+                }
+                input.click()
+              }}
+            >
+              {separationFile ? (
+                <div>
+                  <div style={{ fontSize: '3rem' }}>♫</div>
+                  <h4>{separationFile.name}</h4>
+                  <p style={{ color: 'var(--text-muted)' }}>{(separationFile.size / 1024 / 1024).toFixed(1)} MB</p>
+                  <button className="btn btn-secondary" onClick={(e) => { e.stopPropagation(); setSeparationFile(null); setSeparationResult(null) }} style={{ marginTop: '0.5rem' }}>
+                    Değiştir
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ fontSize: '4rem' }}>+</div>
+                  <h4>Şarkı Dosyası Yükle</h4>
+                  <p>MP3, WAV, FLAC — AI ile vokal, davul, bas, diğer ayır</p>
+                </div>
+              )}
+            </div>
+
+            {/* Separate Button */}
+            {separationFile && !isSeparating && !separationResult && (
+              <button
+                className="btn"
+                onClick={separateStems}
+                style={{ width: '100%', padding: '1.2rem', fontSize: '1.1rem', marginBottom: '1.5rem' }}
+              >
+                AI ile Parçala (Demucs)
+              </button>
+            )}
+
+            {/* Progress */}
+            {isSeparating && (
+              <div style={{ textAlign: 'center', padding: '2rem' }}>
+                <div className="spinner" style={{ margin: '0 auto 1rem' }} />
+                <p style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>
+                  {separationProgress < 15 ? 'Dosya yükleniyor...' :
+                   separationProgress < 50 ? 'Demucs AI ayrıştırma yapıyor... (en uzun adım)' :
+                   separationProgress < 80 ? 'Stemler oluşturuluyor...' :
+                   'Neredeyse bitti...'}
+                </p>
+                <div className="progress-bar" style={{ maxWidth: '400px', margin: '0 auto' }}>
+                  <div className="progress-fill" style={{ width: `${Math.round(separationProgress)}%` }} />
+                </div>
+                <p style={{ marginTop: '0.5rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  %{Math.round(separationProgress)} — CPU'da 3-10 dakika sürebilir
+                </p>
+              </div>
+            )}
+
+            {/* Results */}
+            {separationResult && (
+              <div>
+                <div style={{ textAlign: 'center', padding: '1.5rem', background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 150, 105, 0.1))', borderRadius: '16px', marginBottom: '1.5rem' }}>
+                  <div style={{ fontSize: '3rem' }}>✓</div>
+                  <h4 style={{ color: '#10b981' }}>{separationResult.message}</h4>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    Cihaz: {separationResult.device.toUpperCase()} • {separationResult.sample_rate} Hz
+                  </p>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.8rem', marginBottom: '1.5rem' }}>
+                  {separationResult.stems.map((stem: any) => (
+                    <div key={stem.name} style={{ padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', textAlign: 'center' }}>
+                      <div style={{ fontSize: '2rem' }}>
+                        {stem.name === 'vocals' ? 'V' : stem.name === 'drums' ? 'D' : stem.name === 'bass' ? 'B' : stem.name === 'music' ? 'M' : 'O'}
+                      </div>
+                      <div style={{ fontWeight: '600', marginTop: '0.3rem' }}>{stem.name}</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        {stem.duration}s • {stem.size_mb} MB
+                      </div>
+                      <audio controls src={`${API_BASE}${stem.download_url}`} style={{ width: '100%', marginTop: '0.5rem', height: '32px' }} />
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  className="btn"
+                  onClick={() => importStemsAsTracks(separationResult.stems)}
+                  style={{ width: '100%', padding: '1rem', fontSize: '1rem', background: 'linear-gradient(135deg, #10b981, #059669)' }}
+                >
+                  Tüm Stemleri Mixer'a Aktar
+                </button>
+              </div>
+            )}
+
+            {/* Tips */}
+            <div style={{ marginTop: '2rem', padding: '1.2rem', background: 'rgba(59, 130, 246, 0.08)', borderRadius: '12px', border: '1px solid rgba(59, 130, 246, 0.15)' }}>
+              <h4 style={{ color: '#60a5fa', marginBottom: '0.5rem' }}>İpuçları</h4>
+              <ul style={{ fontSize: '0.85rem', color: 'var(--text-muted)', paddingLeft: '1.2rem', lineHeight: '1.8' }}>
+                <li><strong>Demucs htdemucs</strong> modeli vokal, davul, bas ve diğer enstrümanları ayırır</li>
+                <li>Ayrıca otomatik olarak bir <strong>müzik (instrumental)</strong> stem'i oluşturulur</li>
+                <li>Stemleri Mixer'a aktardıktan sonra her birine ayrı efekt uygulayabilirsiniz</li>
+                <li>Vokal track'ine Autotune, Compressor; Davul'a EQ, Gate gibi efektler ekleyin</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ======== EFFECTS & EQ ======== */}
       {activeSection === 'effects' && (
         <div className="studio-section">
           {!selectedTrack ? (
             <div className="empty-state">
-              <div className="empty-icon">🎚️</div>
+              <div className="empty-icon">•</div>
               <h4>Track seçin</h4>
               <p>Efekt eklemek için önce Mixer sekmesinden bir track seçin</p>
             </div>
           ) : (
             <>
               <div className="section-header">
-                <h3>🎚️ Efektler — <span style={{ color: selectedTrack.color }}>{selectedTrack.name}</span></h3>
+                <h3>Efektler — <span style={{ color: selectedTrack.color }}>{selectedTrack.name}</span></h3>
               </div>
 
               {/* Add Effects Grid */}
@@ -1098,7 +1439,7 @@ export default function ProfessionalStudio() {
 
               {/* Effects Chain */}
               <div className="effects-chain">
-                <h4>🔗 Efekt Zinciri {selectedTrack.effects.length > 0 && `(${selectedTrack.effects.length})`}</h4>
+                <h4>Efekt Zinciri {selectedTrack.effects.length > 0 && `(${selectedTrack.effects.length})`}</h4>
                 {selectedTrack.effects.length === 0 ? (
                   <div className="empty-chain">Henüz efekt eklenmedi. Yukarıdan bir efekt seçin.</div>
                 ) : (
@@ -1115,7 +1456,7 @@ export default function ProfessionalStudio() {
                           </button>
                           {fx.type === 'autotune' && (
                             <button className="fx-apply-btn" onClick={() => applyAutotune(selectedTrack.id)} disabled={!selectedTrack.audioFile || selectedTrack.isProcessing}>
-                              🎯 Uygula
+                              Uygula
                             </button>
                           )}
                           <button className="fx-remove" onClick={() => removeEffect(selectedTrack.id, fx.id)}>✕</button>
@@ -1323,7 +1664,7 @@ export default function ProfessionalStudio() {
                               <span className="param-val">{fx.params.autotuneSpeed ?? 5} ({(fx.params.autotuneSpeed ?? 5) <= 3 ? 'Hard' : (fx.params.autotuneSpeed ?? 5) <= 7 ? 'Doğal' : 'Yumuşak'})</span>
                             </div>
                             <div className="autotune-info">
-                              ℹ️ Autotune backend'de uygulanır. Parametreleri ayarladıktan sonra "Uygula" butonuna basın.
+                              Autotune backend'de uygulanır. Parametreleri ayarladıktan sonra "Uygula" butonuna basın.
                             </div>
                           </>
                         )}
@@ -1391,7 +1732,267 @@ export default function ProfessionalStudio() {
               {/* Quick Apply hint */}
               {isPlaying && selectedTrack.effects.length > 0 && (
                 <div className="apply-hint">
-                  💡 Efekt değişikliklerini dinlemek için ▶️ butonuna tekrar basın
+                  � Canlı mod — efekt değişiklikleri anında uygulanıyor
+                </div>
+              )}
+
+              {/* Professional Vocal Presets */}
+              {selectedTrack.audioFile && (
+                <div style={{ marginTop: '1.5rem' }}>
+                  {/* Preset Section Header */}
+                  <div style={{ padding: '1.2rem 1.4rem', background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.12), rgba(16, 185, 129, 0.08))', borderRadius: '14px 14px 0 0', border: '1px solid rgba(139, 92, 246, 0.25)', borderBottom: 'none' }}>
+                    <h4 style={{ margin: 0, color: '#a78bfa', fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      Profesyonel Vokal Presetleri
+                    </h4>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0.4rem 0 0', lineHeight: 1.4 }}>
+                      Gerçek mixing mühendisi iş akışlarını taklit eden çok aşamalı vokal işleme zincirleri. 
+                      Her preset; EQ, kompresör, de-esser, saturasyon ve limiter gibi efektleri profesyonel sırayla uygular.
+                    </p>
+                  </div>
+
+                  {/* Intensity Slider */}
+                  <div style={{ padding: '1rem 1.4rem', background: 'rgba(139, 92, 246, 0.05)', border: '1px solid rgba(139, 92, 246, 0.15)', borderTop: 'none' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                      <label style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                        İşleme Yoğunluğu
+                      </label>
+                      <span style={{ fontSize: '0.85rem', color: '#a78bfa', fontWeight: 700, fontFamily: 'monospace', minWidth: '40px', textAlign: 'right' }}>
+                        {Math.round(presetIntensity * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={Math.round(presetIntensity * 100)}
+                      onChange={e => setPresetIntensity(parseInt(e.target.value) / 100)}
+                      style={{ width: '100%', accentColor: '#a78bfa' }}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                      <span>Hafif</span>
+                      <span>Orta</span>
+                      <span>Yoğun</span>
+                    </div>
+                  </div>
+
+                  {/* Preset Cards Grid */}
+                  <div style={{ padding: '1rem 1.4rem', background: 'rgba(15, 15, 25, 0.4)', border: '1px solid rgba(139, 92, 246, 0.15)', borderTop: 'none', borderRadius: '0 0 14px 14px' }}>
+                    {/* Professional Presets */}
+                    <div style={{ marginBottom: '1.2rem' }}>
+                      <div style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.6rem' }}>
+                        Profesyonel
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.6rem' }}>
+                        {/* Studio Polish */}
+                        <button
+                          onClick={() => applyVocalPreset(selectedTrack.id, 'studio_polish')}
+                          disabled={selectedTrack.isProcessing}
+                          style={{
+                            padding: '0.9rem', background: activePreset === 'studio_polish' ? 'rgba(139, 92, 246, 0.25)' : 'rgba(30, 30, 50, 0.6)',
+                            border: activePreset === 'studio_polish' ? '1px solid #a78bfa' : '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: '10px', cursor: selectedTrack.isProcessing ? 'not-allowed' : 'pointer', textAlign: 'left',
+                            transition: 'all 0.2s', opacity: selectedTrack.isProcessing && activePreset !== 'studio_polish' ? 0.5 : 1
+                          }}
+                        >
+                          <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#e2e8f0' }}>Studio Polish</div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem', lineHeight: 1.3 }}>
+                            Tam stüdyo vokal zinciri — De-ess, Kompresör, EQ, Saturasyon, Limiter
+                          </div>
+                          {activePreset === 'studio_polish' && <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px', marginTop: '0.4rem' }} />}
+                        </button>
+
+                        {/* Natural Warmth */}
+                        <button
+                          onClick={() => applyVocalPreset(selectedTrack.id, 'natural_warmth')}
+                          disabled={selectedTrack.isProcessing}
+                          style={{
+                            padding: '0.9rem', background: activePreset === 'natural_warmth' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(30, 30, 50, 0.6)',
+                            border: activePreset === 'natural_warmth' ? '1px solid #f59e0b' : '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: '10px', cursor: selectedTrack.isProcessing ? 'not-allowed' : 'pointer', textAlign: 'left',
+                            transition: 'all 0.2s', opacity: selectedTrack.isProcessing && activePreset !== 'natural_warmth' ? 0.5 : 1
+                          }}
+                        >
+                          <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#e2e8f0' }}>Natural Warmth</div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem', lineHeight: 1.3 }}>
+                            Sıcak ve doğal ses — Hafif EQ, tüp saturasyonu, yumuşak kompresör
+                          </div>
+                          {activePreset === 'natural_warmth' && <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px', marginTop: '0.4rem' }} />}
+                        </button>
+
+                        {/* Radio Ready */}
+                        <button
+                          onClick={() => applyVocalPreset(selectedTrack.id, 'radio_ready')}
+                          disabled={selectedTrack.isProcessing}
+                          style={{
+                            padding: '0.9rem', background: activePreset === 'radio_ready' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(30, 30, 50, 0.6)',
+                            border: activePreset === 'radio_ready' ? '1px solid #3b82f6' : '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: '10px', cursor: selectedTrack.isProcessing ? 'not-allowed' : 'pointer', textAlign: 'left',
+                            transition: 'all 0.2s', opacity: selectedTrack.isProcessing && activePreset !== 'radio_ready' ? 0.5 : 1
+                          }}
+                        >
+                          <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#e2e8f0' }}>Radio Ready</div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem', lineHeight: 1.3 }}>
+                            Yayın kalitesi — Agresif kompresör, parlak EQ, de-esser
+                          </div>
+                          {activePreset === 'radio_ready' && <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px', marginTop: '0.4rem' }} />}
+                        </button>
+
+                        {/* Raw Clean */}
+                        <button
+                          onClick={() => applyVocalPreset(selectedTrack.id, 'raw_clean')}
+                          disabled={selectedTrack.isProcessing}
+                          style={{
+                            padding: '0.9rem', background: activePreset === 'raw_clean' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(30, 30, 50, 0.6)',
+                            border: activePreset === 'raw_clean' ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: '10px', cursor: selectedTrack.isProcessing ? 'not-allowed' : 'pointer', textAlign: 'left',
+                            transition: 'all 0.2s', opacity: selectedTrack.isProcessing && activePreset !== 'raw_clean' ? 0.5 : 1
+                          }}
+                        >
+                          <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#e2e8f0' }}>Raw Clean</div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem', lineHeight: 1.3 }}>
+                            Minimal temizlik — HP filter, normalize, hafif de-ess
+                          </div>
+                          {activePreset === 'raw_clean' && <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px', marginTop: '0.4rem' }} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Genre/Style Presets */}
+                    <div style={{ marginBottom: '1.2rem' }}>
+                      <div style={{ fontSize: '0.75rem', color: '#8b5cf6', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.6rem' }}>
+                        Tarz Bazlı
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.6rem' }}>
+                        {/* Pop Vocal */}
+                        <button
+                          onClick={() => applyVocalPreset(selectedTrack.id, 'pop_vocal')}
+                          disabled={selectedTrack.isProcessing}
+                          style={{
+                            padding: '0.9rem', background: activePreset === 'pop_vocal' ? 'rgba(236, 72, 153, 0.2)' : 'rgba(30, 30, 50, 0.6)',
+                            border: activePreset === 'pop_vocal' ? '1px solid #ec4899' : '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: '10px', cursor: selectedTrack.isProcessing ? 'not-allowed' : 'pointer', textAlign: 'left',
+                            transition: 'all 0.2s', opacity: selectedTrack.isProcessing && activePreset !== 'pop_vocal' ? 0.5 : 1
+                          }}
+                        >
+                          <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#e2e8f0' }}>Pop Vocal</div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem', lineHeight: 1.3 }}>
+                            Modern pop sesi — Sıkı kompresör, presence EQ, exciter, stereo genişlik
+                          </div>
+                          {activePreset === 'pop_vocal' && <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px', marginTop: '0.4rem' }} />}
+                        </button>
+
+                        {/* Soft Ballad */}
+                        <button
+                          onClick={() => applyVocalPreset(selectedTrack.id, 'soft_ballad')}
+                          disabled={selectedTrack.isProcessing}
+                          style={{
+                            padding: '0.9rem', background: activePreset === 'soft_ballad' ? 'rgba(168, 85, 247, 0.2)' : 'rgba(30, 30, 50, 0.6)',
+                            border: activePreset === 'soft_ballad' ? '1px solid #a855f7' : '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: '10px', cursor: selectedTrack.isProcessing ? 'not-allowed' : 'pointer', textAlign: 'left',
+                            transition: 'all 0.2s', opacity: selectedTrack.isProcessing && activePreset !== 'soft_ballad' ? 0.5 : 1
+                          }}
+                        >
+                          <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#e2e8f0' }}>Soft Ballad</div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem', lineHeight: 1.3 }}>
+                            Yumuşak balad — Nazik kompresör, sıcak EQ, hafif saturasyon
+                          </div>
+                          {activePreset === 'soft_ballad' && <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px', marginTop: '0.4rem' }} />}
+                        </button>
+
+                        {/* Hip-Hop Vocal */}
+                        <button
+                          onClick={() => applyVocalPreset(selectedTrack.id, 'hiphop_vocal')}
+                          disabled={selectedTrack.isProcessing}
+                          style={{
+                            padding: '0.9rem', background: activePreset === 'hiphop_vocal' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(30, 30, 50, 0.6)',
+                            border: activePreset === 'hiphop_vocal' ? '1px solid #ef4444' : '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: '10px', cursor: selectedTrack.isProcessing ? 'not-allowed' : 'pointer', textAlign: 'left',
+                            transition: 'all 0.2s', opacity: selectedTrack.isProcessing && activePreset !== 'hiphop_vocal' ? 0.5 : 1
+                          }}
+                        >
+                          <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#e2e8f0' }}>Hip-Hop Vocal</div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem', lineHeight: 1.3 }}>
+                            Agresif hip-hop — Ağır kompresör, sert EQ, exciter, saturasyon
+                          </div>
+                          {activePreset === 'hiphop_vocal' && <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px', marginTop: '0.4rem' }} />}
+                        </button>
+
+                        {/* R&B Smooth */}
+                        <button
+                          onClick={() => applyVocalPreset(selectedTrack.id, 'rnb_smooth')}
+                          disabled={selectedTrack.isProcessing}
+                          style={{
+                            padding: '0.9rem', background: activePreset === 'rnb_smooth' ? 'rgba(99, 102, 241, 0.2)' : 'rgba(30, 30, 50, 0.6)',
+                            border: activePreset === 'rnb_smooth' ? '1px solid #6366f1' : '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: '10px', cursor: selectedTrack.isProcessing ? 'not-allowed' : 'pointer', textAlign: 'left',
+                            transition: 'all 0.2s', opacity: selectedTrack.isProcessing && activePreset !== 'rnb_smooth' ? 0.5 : 1
+                          }}
+                        >
+                          <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#e2e8f0' }}>R&B Smooth</div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem', lineHeight: 1.3 }}>
+                            Pürüzsüz R&B — Sıcak EQ, kompresör, saturasyon, stereo genişlik
+                          </div>
+                          {activePreset === 'rnb_smooth' && <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px', marginTop: '0.4rem' }} />}
+                        </button>
+
+                        {/* Rock Vocal */}
+                        <button
+                          onClick={() => applyVocalPreset(selectedTrack.id, 'rock_vocal')}
+                          disabled={selectedTrack.isProcessing}
+                          style={{
+                            padding: '0.9rem', background: activePreset === 'rock_vocal' ? 'rgba(251, 146, 60, 0.2)' : 'rgba(30, 30, 50, 0.6)',
+                            border: activePreset === 'rock_vocal' ? '1px solid #fb923c' : '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: '10px', cursor: selectedTrack.isProcessing ? 'not-allowed' : 'pointer', textAlign: 'left',
+                            transition: 'all 0.2s', opacity: selectedTrack.isProcessing && activePreset !== 'rock_vocal' ? 0.5 : 1
+                          }}
+                        >
+                          <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#e2e8f0' }}>Rock Vocal</div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem', lineHeight: 1.3 }}>
+                            Güçlü rock sesi — Ağır kompresör, sert saturasyon, exciter
+                          </div>
+                          {activePreset === 'rock_vocal' && <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px', marginTop: '0.4rem' }} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Processing indicator */}
+                    {selectedTrack.isProcessing && (
+                      <div style={{ padding: '0.8rem', background: 'rgba(139, 92, 246, 0.1)', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.8rem' }}>
+                        <div className="spinner" style={{ width: '18px', height: '18px', borderWidth: '2px' }} />
+                        <div>
+                          <div style={{ fontSize: '0.85rem', color: '#a78bfa', fontWeight: 600 }}>Vokal işleniyor...</div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Çok aşamalı profesyonel efekt zinciri uygulanıyor</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Simple Effects Accordion */}
+                    <details style={{ marginTop: '0.5rem' }}>
+                      <summary style={{ cursor: 'pointer', fontSize: '0.8rem', color: 'var(--text-muted)', padding: '0.5rem', userSelect: 'none' }}>
+                        Tekli Efektler (Pitch, Tempo, Bass...)
+                      </summary>
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', padding: '0.8rem 0.4rem' }}>
+                        <button className="effect-add-btn" onClick={() => applyServerEffect(selectedTrack.id, 'pitch_shift', { semitones: 2 })} disabled={selectedTrack.isProcessing}>
+                          Pitch +2
+                        </button>
+                        <button className="effect-add-btn" onClick={() => applyServerEffect(selectedTrack.id, 'pitch_shift', { semitones: -2 })} disabled={selectedTrack.isProcessing}>
+                          Pitch -2
+                        </button>
+                        <button className="effect-add-btn" onClick={() => applyServerEffect(selectedTrack.id, 'tempo_change', { rate: 1.15 })} disabled={selectedTrack.isProcessing}>
+                          Hızlandır
+                        </button>
+                        <button className="effect-add-btn" onClick={() => applyServerEffect(selectedTrack.id, 'tempo_change', { rate: 0.85 })} disabled={selectedTrack.isProcessing}>
+                          Yavaşlat
+                        </button>
+                        <button className="effect-add-btn" onClick={() => applyServerEffect(selectedTrack.id, 'bass_boost', { amount: 0.5 })} disabled={selectedTrack.isProcessing}>
+                          Bass Boost
+                        </button>
+                        <button className="effect-add-btn" onClick={() => applyServerEffect(selectedTrack.id, 'normalize', { target: 0.95 })} disabled={selectedTrack.isProcessing}>
+                          Normalize
+                        </button>
+                      </div>
+                    </details>
+                  </div>
                 </div>
               )}
             </>
@@ -1403,12 +2004,12 @@ export default function ProfessionalStudio() {
       {activeSection === 'noise' && (
         <div className="studio-section">
           <div className="section-header">
-            <h3>🚫 Gürültü Azaltma & Ses Temizleme</h3>
+            <h3>Gürültü Azaltma & Ses Temizleme</h3>
           </div>
 
           <div className="noise-panel">
             <div className="noise-info-card">
-              <h4>🔬 Spectral Denoising</h4>
+              <h4>Spectral Denoising</h4>
               <p>Yapay zeka destekli spektral gürültü azaltma. Arka plan gürültüsünü, hışırtıyı ve istenmeyen sesleri temizler.</p>
             </div>
 
@@ -1443,7 +2044,7 @@ export default function ProfessionalStudio() {
                       onClick={() => applyNoiseReduction(t.id)}
                       disabled={isProcessingNoise || t.isProcessing}
                     >
-                      {t.isProcessing ? '⏳ İşleniyor...' : '🧹 Gürültü Temizle'}
+                      {t.isProcessing ? 'İşleniyor...' : 'Gürültü Temizle'}
                     </button>
                   </div>
                 ))
@@ -1454,7 +2055,7 @@ export default function ProfessionalStudio() {
             </div>
 
             <div className="noise-tips">
-              <h4>💡 İpuçları</h4>
+              <h4>İpuçları</h4>
               <ul>
                 <li><strong>Hafif (%20-40):</strong> Doğal ses korunur, sadece arka plan gürültüsü temizlenir</li>
                 <li><strong>Orta (%50-60):</strong> Genel amaçlı temizleme, çoğu kayıt için ideal</li>
@@ -1471,12 +2072,12 @@ export default function ProfessionalStudio() {
       {activeSection === 'export' && (
         <div className="studio-section">
           <div className="section-header">
-            <h3>📥 Mix & Dışa Aktar</h3>
+            <h3>Mix & Dışa Aktar</h3>
           </div>
 
           <div className="export-panel">
             <div className="export-summary">
-              <h4>📋 Mix Özeti</h4>
+              <h4>Mix Özeti</h4>
               <div className="export-tracks-list">
                 {tracks.length === 0 ? (
                   <p className="export-empty">Henüz track eklenmedi.</p>
@@ -1486,7 +2087,7 @@ export default function ProfessionalStudio() {
                       <span className="track-color-dot" style={{ background: t.color }} />
                       <span className="export-track-name">{t.name}</span>
                       <span className="export-track-status">
-                        {!t.audioFile ? '❌ Dosya yok' : t.muted ? '🔇 Sessiz' : `🔊 ${t.volume}%`}
+                        {!t.audioFile ? 'Dosya yok' : t.muted ? 'Sessiz' : `${t.volume}%`}
                       </span>
                       <span className="export-track-fx">{t.effects.filter(e => e.enabled).length} FX</span>
                       <span className="export-track-pan">
@@ -1516,9 +2117,9 @@ export default function ProfessionalStudio() {
                 disabled={isExporting || tracks.filter(t => t.audioFile).length === 0}
               >
                 {isExporting ? (
-                  <>⏳ {exportProgress}</>
+                  <>{exportProgress}</>
                 ) : (
-                  <>📥 WAV Olarak Dışa Aktar</>
+                  <>WAV Olarak Dışa Aktar</>
                 )}
               </button>
 
@@ -1533,7 +2134,7 @@ export default function ProfessionalStudio() {
             </div>
 
             <div className="export-tips">
-              <h4>💡 Dışa Aktarma İpuçları</h4>
+              <h4>Dışa Aktarma İpuçları</h4>
               <ul>
                 <li>Tüm track'lerin volume ve pan ayarlarını kontrol edin</li>
                 <li>Mute edilmiş track'ler mixa dahil edilmez</li>

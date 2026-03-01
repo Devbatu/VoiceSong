@@ -51,7 +51,7 @@ export default function TextToSongGenerator() {
 
   return (
     <div className="component-container">
-      <h2>📝 Metin ile Şarkı Oluştur</h2>
+      <h2>Metin ile Şarkı Oluştur</h2>
       <p style={{ marginBottom: '2rem', color: '#888' }}>
         Herhangi bir metni AI ile şarkıya dönüştür
       </p>
@@ -150,30 +150,30 @@ export default function TextToSongGenerator() {
           className="btn"
           disabled={loading || params.text.length < 50}
         >
-          {loading ? '⏳ Oluşturuluyor...' : '🎵 Şarkı Oluştur'}
+          {loading ? 'Oluşturuluyor...' : 'Şarkı Oluştur'}
         </button>
       </form>
 
       {/* Sonuç */}
       {result && (
         <div className="status-message success-message" style={{ marginTop: '2rem' }}>
-          <h3>✅ Şarkı Oluşturuldu!</h3>
+          <h3>Şarkı Oluşturuldu!</h3>
           <div style={{ marginTop: '1rem' }}>
             <p><strong>Stil:</strong> {params.musicStyle}</p>
             <p><strong>Tempo:</strong> {params.tempo} BPM</p>
             <p><strong>Anahtar:</strong> {params.key}</p>
           </div>
           <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem' }}>
-            <button className="btn">🎧 Dinle</button>
-            <button className="btn">📥 İndir</button>
-            <button className="btn">✏️ Düzenle</button>
+            <button className="btn">Dinle</button>
+            <button className="btn">İndir</button>
+            <button className="btn">Düzenle</button>
           </div>
         </div>
       )}
 
       {error && (
         <div className="status-message error-message" style={{ marginTop: '2rem' }}>
-          <h3>❌ Hata</h3>
+          <h3>Hata</h3>
           <p>{error}</p>
         </div>
       )}
