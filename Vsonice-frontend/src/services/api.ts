@@ -126,18 +126,44 @@ class ApiService {
 
   async generateTextToSong(params: {
     text: string;
-    voiceModel: string;
-    musicStyle: string;
-    tempo: number;
-    key: string;
+    voiceProfileId?: string;
+    voiceModelId?: string;
+    speed?: string;
+    language?: string;
+    melodyIntensity?: number;
+    key?: string;
+    bpm?: number;
+    genre?: string;
+    style?: string;
+    mood?: string;
+    sections?: Array<{ type: string; text: string }>;
   }) {
-    return this.request('/api/generate/text-to-song', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(params),
-    });
+    const url = `${this.baseUrl}/api/generate/text-to-song`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 min timeout
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.detail || `Vokal oluşturma başarısız: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error('İşlem zaman aşımına uğradı (10 dakika).');
+      }
+      throw error;
+    }
   }
 
   async cloneVoiceAndSing(voiceFile: File | null, songFile: File, voiceProfileId?: string) {

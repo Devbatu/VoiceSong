@@ -547,9 +547,9 @@ export default function VoiceCloneSongMaker() {
       } else {
         // Use voice file or saved profile
         result = await apiService.cloneVoiceAndSing(
-          voiceProfile.file || null,
+          voiceProfile?.file || null,
           songFile,
-          voiceProfile.savedProfileId
+          voiceProfile?.savedProfileId
         )
       }
       
@@ -1060,6 +1060,18 @@ export default function VoiceCloneSongMaker() {
             <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '0 0 0.8rem 0' }}>
               Birden fazla ses kaydıyla özel AI ses modeli eğitin — daha doğal ve tutarlı sonuçlar!
             </p>
+
+            <div style={{
+              fontSize: '0.8rem', lineHeight: 1.6, padding: '0.7rem 0.9rem',
+              background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.25)',
+              borderRadius: '8px', margin: '0 0 0.9rem 0', color: 'var(--text-muted)'
+            }}>
+              <strong style={{ color: 'var(--text-primary)' }}>🎙️ En iyi sonuç için kayıt rehberi:</strong>
+              <br />• <strong>Şarkı söyleyerek</strong> kaydedin, konuşarak değil — AI söyleyiş stilini doğrudan kayıttan öğrenir
+              <br />• Her örnek <strong>15-25 saniye kesintisiz</strong> olsun; alçak + yüksek notaları kapsayın
+              <br />• Sessiz ortamda, mikrofona 15-20 cm mesafeden; arkada müzik/kulaklık sızıntısı olmasın
+              <br />• Fısıldamayın — normal şarkı enerjisiyle, net telaffuzla söyleyin
+            </div>
 
             {/* Trained Models List (always visible if models exist) */}
             {trainedModels.length > 0 && (

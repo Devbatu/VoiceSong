@@ -1,0 +1,17 @@
+# Python envs
+.venv/
+Vsonice-backend/venv/
+Vsonice-backend/.venv-neural/
+__pycache__/
+
+# Seed-VC vendor repo (klonlanır: vendor/seed-vc, kurulum: requirements-worker.txt)
+Vsonice-backend/vendor/
+
+# Runtime data
+Vsonice-backend/uploads/
+Vsonice-backend/output/
+Vsonice-backend/temp/
+
+# Node
+Vsonice-frontend/node_modules/
+Vsonice-frontend/dist/

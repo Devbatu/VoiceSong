@@ -169,7 +169,7 @@ const DAWStudio: React.FC = () => {
   }, [engine])
 
   // ---- Smart composer export → add as clip ----
-  const handleComposerExport = useCallback((buffer: AudioBuffer, name: string, songBpm: number) => {
+  const handleComposerExport = useCallback((buffer: AudioBuffer, name: string, _songBpm: number) => {
     let trackId = selectedTrackId
     if (!trackId || tracks.find(t => t.id === trackId)?.type !== 'audio') {
       trackId = engine.addTrack('audio', name)

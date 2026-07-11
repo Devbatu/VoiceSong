@@ -182,7 +182,13 @@ def match_envelope(converted, original, frame_ms=25, sr=22050):
     Match amplitude envelope of converted audio to original.
     Preserves natural dynamics (loud/quiet passages stay loud/quiet).
     Prevents the "flat robotic" sound from neural conversion.
+    
+    v7: Longer frames (40ms), tighter gain range (0.6-1.8), heavier smoothing
+    to eliminate crackling from rapid gain modulation.
     """
+    # v7: Use 40ms frames instead of caller's frame_ms if smaller
+    # Shorter frames = faster gain changes = crackling risk
+    frame_ms = max(frame_ms, 40)
     frame = max(int(sr * frame_ms / 1000), 1)
     hop = max(frame // 2, 1)
     
@@ -206,13 +212,14 @@ def match_envelope(converted, original, frame_ms=25, sr=22050):
         for i in range(n_frames)
     ], dtype=np.float32)
     
-    # Compute gain (clip to prevent extreme amplification/attenuation)
-    # v6: Tighter range to preserve user's natural dynamics
-    gains = np.clip(orig_env / conv_env, 0.4, 2.5)
+    # v7: Tighter gain range (was 0.4-2.5 — too wide, extreme swings cause crackle)
+    gains = np.clip(orig_env / conv_env, 0.6, 1.8)
     
-    # Smooth to avoid rapid gain changes
-    smooth_size = max(5, n_frames // 40)
+    # v7: Much heavier smoothing (was n_frames//40 which could be as low as 5)
+    smooth_size = max(11, n_frames // 20)
     gains = uniform_filter1d(gains, size=smooth_size)
+    # Second smoothing pass for extra safety against micro-steps
+    gains = uniform_filter1d(gains, size=max(5, smooth_size // 2))
     
     # Interpolate to full sample length
     frame_centers = np.arange(n_frames) * hop + frame // 2
@@ -285,12 +292,15 @@ def unified_spectral_enhance(audio, original, sr):
     
     # ── 3) Spectral Smoothing (frequency axis, adaptive) ──
     # Remove isolated frequency spikes that cause metallic/robotic sound
-    mag_freq_smooth = median_filter(mag_work, size=(5, 1))
+    # v7: Reduced median filter from 5→3 bins — size=5 was too aggressive,
+    #     smearing harmonics and creating tonal crackling artifacts
+    mag_freq_smooth = median_filter(mag_work, size=(3, 1))
     
-    # Adaptive strength: more in high freq where artifacts are worse
+    # Adaptive strength: less aggressive overall to prevent crackling
+    # v7: Halved all strengths (0.08→0.04, 0.15→0.08, 0.20→0.10)
     strength_curve = np.where(
-        freq_bins < 2000, 0.08,   # Low freq: very gentle
-        np.where(freq_bins < 5000, 0.15, 0.20)  # High freq: moderate
+        freq_bins < 2000, 0.04,   # Low freq: minimal
+        np.where(freq_bins < 5000, 0.08, 0.10)  # High freq: gentle
     ).astype(np.float32).reshape(-1, 1)
     
     mag_work = mag_work * (1.0 - strength_curve) + mag_freq_smooth * strength_curve
@@ -482,19 +492,20 @@ def transfer_micro_dynamics(converted, original, sr):
 def denoise_converted(audio, sr):
     """
     Very gentle neural artifact removal using noisereduce.
-    v6: Reduced from 0.35 → 0.20 to preserve voice character.
-    Each noisereduce pass adds a tiny spectral smearing — less is more.
+    v7: Reduced from 0.20 → 0.12 to eliminate "musical noise" crackling.
+    noisereduce's spectral gating creates tonal artifacts (crackling/warbling)
+    when prop_decrease is too high. Wider smoothing masks further reduce this.
     """
     cleaned = nr.reduce_noise(
         y=audio,
         sr=sr,
-        prop_decrease=0.20,     # v6: Much gentler (was 0.35)
+        prop_decrease=0.12,     # v7: Even gentler (was 0.20 — caused musical noise/crackling)
         stationary=False,
         n_fft=2048,
         win_length=2048,
         hop_length=512,
-        freq_mask_smooth_hz=300,  # Wider smooth = less spectral damage
-        time_mask_smooth_ms=80,   # Wider smooth = less temporal damage
+        freq_mask_smooth_hz=500,  # v7: Wider (was 300) — prevents spectral crackling
+        time_mask_smooth_ms=120,  # v7: Wider (was 80) — prevents temporal crackling
     )
     return cleaned.astype(np.float32)
 

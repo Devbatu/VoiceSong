@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vsonice - AI-Powered Voice & Music Studio</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;color-scheme:dark}
+body{margin:0;overflow:hidden;background:#030014}
+
+/* Animations */
+@keyframes fadeInUp{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeInLeft{from{opacity:0;transform:translateX(-60px)}to{opacity:1;transform:translateX(0)}}
+@keyframes fadeInRight{from{opacity:0;transform:translateX(60px)}to{opacity:1;transform:translateX(0)}}
+@keyframes scaleIn{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
+@keyframes pulseGlow{0%,100%{box-shadow:0 0 20px rgba(99,102,241,.3)}50%{box-shadow:0 0 50px rgba(99,102,241,.6),0 0 80px rgba(139,92,246,.3)}}
+@keyframes gradShift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+@keyframes particle{0%{transform:translateY(100vh) scale(0);opacity:0}10%{opacity:1}90%{opacity:1}100%{transform:translateY(-10vh) scale(1);opacity:0}}
+@keyframes slideDown{from{opacity:0;transform:translateY(-30px)}to{opacity:1;transform:translateY(0)}}
+@keyframes countUp{from{opacity:0;transform:scale(.5)}to{opacity:1;transform:scale(1)}}
+@keyframes borderGlow{0%,100%{border-color:rgba(99,102,241,.3)}50%{border-color:rgba(139,92,246,.7)}}
+
+.p-root{display:flex;flex-direction:column;height:100vh;background:#030014;color:#e2e8f0;font-family:'Inter','Segoe UI',system-ui,sans-serif;overflow:hidden;position:relative}
+.p-bg{position:absolute;inset:0;overflow:hidden;z-index:0;pointer-events:none}
+.p-orb{position:absolute;border-radius:50%;filter:blur(100px);opacity:.15;animation:float 8s ease-in-out infinite}
+.p-orb-1{width:600px;height:600px;top:-15%;left:-10%;background:radial-gradient(circle,#6366f1,#4f46e5)}
+.p-orb-2{width:500px;height:500px;bottom:-15%;right:-10%;background:radial-gradient(circle,#8b5cf6,#7c3aed);animation-delay:-3s}
+.p-orb-3{width:350px;height:350px;top:40%;left:50%;background:radial-gradient(circle,#3b82f6,#2563eb);animation-delay:-5s}
+.p-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(99,102,241,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(99,102,241,.04) 1px,transparent 1px);background-size:60px 60px}
+.p-particles{position:absolute;inset:0}
+.p-pt{position:absolute;width:3px;height:3px;background:rgba(139,92,246,.6);border-radius:50%;animation:particle linear infinite}
+
+.p-main{flex:1;display:flex;align-items:center;justify-content:center;padding:2rem;position:relative;z-index:1}
+.p-frame{width:100%;max-width:1200px;aspect-ratio:16/9;background:rgba(15,15,35,.85);backdrop-filter:blur(30px);border:1px solid rgba(99,102,241,.15);border-radius:24px;box-shadow:0 0 60px rgba(99,102,241,.08),0 25px 60px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05);overflow:hidden;display:flex;flex-direction:column;position:relative;animation:scaleIn .6s cubic-bezier(.16,1,.3,1)}
+.p-snum{position:absolute;top:1.2rem;right:1.5rem;font-size:.75rem;color:#475569;font-weight:600;background:rgba(15,15,35,.8);padding:4px 10px;border-radius:8px;border:1px solid rgba(99,102,241,.08);z-index:5}
+
+.p-slide{flex:1;display:none;flex-direction:column;padding:3rem 4rem;position:relative;overflow:hidden}
+.p-slide.active{display:flex;animation:fadeInUp .7s cubic-bezier(.16,1,.3,1)}
+.p-slide.active.rev{animation:fadeInLeft .7s cubic-bezier(.16,1,.3,1)}
+
+/* Cover */
+.p-cover{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:1.2rem}
+.p-cover-icon{font-size:5rem;animation:float 3s ease-in-out infinite;filter:drop-shadow(0 0 30px rgba(99,102,241,.4))}
+.p-cover-title{font-size:5.5rem;font-weight:900;letter-spacing:-3px;background:linear-gradient(135deg,#60a5fa,#818cf8,#a78bfa,#c084fc);background-size:300% 300%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:gradShift 4s ease infinite;line-height:1.1}
+.p-cover-sub{font-size:1.6rem;color:#94a3b8;font-weight:400;letter-spacing:2px;text-transform:uppercase;animation:fadeInUp .8s .2s both}
+.p-cover-q{margin-top:1.5rem;padding:.8rem 2rem;border-radius:50px;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.2);color:#a5b4fc;font-size:1.2rem;font-style:italic;animation:pulseGlow 3s ease-in-out infinite,fadeInUp .8s .4s both}
+
+/* Title */
+.p-title{font-size:2.4rem;font-weight:800;color:#fff;margin-bottom:.5rem;animation:slideDown .5s cubic-bezier(.16,1,.3,1)}
+.p-title::after{content:'';display:block;width:80px;height:4px;border-radius:2px;background:linear-gradient(90deg,#6366f1,#8b5cf6);margin-top:.8rem}
+.p-stitle{font-size:1.15rem;color:#818cf8;margin-bottom:1.5rem;animation:fadeInUp .5s .15s both}
+.p-qbar{font-size:1rem;color:#94a3b8;font-style:italic;border-left:4px solid #6366f1;padding:.5rem 1rem;margin-bottom:1.5rem;background:rgba(99,102,241,.05);border-radius:0 8px 8px 0;animation:fadeInLeft .5s .2s both}
+
+/* Bullets */
+.p-blist{list-style:none;padding:0;flex:1;display:flex;flex-direction:column;justify-content:center;gap:1rem}
+.p-bi{display:flex;align-items:flex-start;gap:1rem;font-size:1.15rem;color:#cbd5e1;line-height:1.6;padding:.8rem 1.2rem;border-radius:12px;background:rgba(30,30,60,.5);border:1px solid rgba(99,102,241,.08);transition:all .3s ease;animation:fadeInLeft .5s both}
+.p-bi:hover{background:rgba(99,102,241,.1);border-color:rgba(99,102,241,.25);transform:translateX(8px)}
+.p-bi-ico{color:#818cf8;font-size:1.2rem;flex-shrink:0;margin-top:2px}
+
+/* Grid */
+.p-grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:1.2rem;flex:1;align-content:center}
+.p-card{padding:1.8rem;border-radius:16px;background:linear-gradient(135deg,rgba(30,30,60,.6),rgba(20,20,50,.8));border:1px solid rgba(99,102,241,.1);transition:all .4s cubic-bezier(.16,1,.3,1);animation:scaleIn .5s both;position:relative;overflow:hidden}
+.p-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#6366f1,#8b5cf6,#a78bfa);transform:scaleX(0);transform-origin:left;transition:transform .4s ease}
+.p-card:hover::before{transform:scaleX(1)}
+.p-card:hover{border-color:rgba(99,102,241,.35);transform:translateY(-4px);box-shadow:0 12px 40px rgba(99,102,241,.15)}
+.p-card-ico{font-size:2.5rem;margin-bottom:.8rem;display:block;filter:drop-shadow(0 0 10px rgba(99,102,241,.3))}
+.p-card-t{font-size:1.3rem;font-weight:700;color:#fff;margin-bottom:.4rem}
+.p-card-d{font-size:.95rem;color:#94a3b8;line-height:1.5}
+
+/* Process */
+.p-proc{display:flex;align-items:center;justify-content:space-between;flex:1;position:relative;padding:0 1rem}
+.p-proc-line{position:absolute;top:50%;left:10%;right:10%;height:3px;background:linear-gradient(90deg,#6366f1,#8b5cf6,#a78bfa);transform:translateY(-50%);z-index:0;opacity:.3}
+.p-step{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;text-align:center;width:30%;animation:fadeInUp .6s both}
+.p-step-c{width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:2rem;font-weight:900;color:#fff;margin-bottom:1.2rem;box-shadow:0 0 30px rgba(99,102,241,.4);animation:pulseGlow 3s ease-in-out infinite;transition:transform .3s ease}
+.p-step:hover .p-step-c{transform:scale(1.12)}
+.p-step-t{font-size:1.4rem;font-weight:700;color:#fff;margin-bottom:.4rem}
+.p-step-d{font-size:.95rem;color:#94a3b8}
+
+/* Split */
+.p-split{display:flex;gap:2rem;flex:1}
+.p-split-l{flex:2;display:flex;flex-direction:column;gap:.7rem;justify-content:center}
+.p-split-i{display:flex;align-items:center;padding:.8rem 1.2rem;border-radius:12px;background:rgba(30,30,60,.4);border:1px solid rgba(99,102,241,.08);animation:fadeInLeft .5s both;transition:all .3s ease}
+.p-split-i:hover{background:rgba(99,102,241,.08);border-color:rgba(99,102,241,.2)}
+.p-split-it{font-weight:700;color:#818cf8;min-width:180px;font-size:1.05rem}
+.p-split-id{color:#94a3b8;font-size:1rem}
+.p-split-r{flex:1;background:linear-gradient(135deg,rgba(99,102,241,.1),rgba(139,92,246,.1));border:1px solid rgba(99,102,241,.15);border-radius:20px;padding:2rem;display:flex;flex-direction:column;justify-content:center;animation:fadeInRight .6s .2s both}
+.p-split-rt{font-size:1.5rem;font-weight:700;color:#fff;padding-bottom:1rem;border-bottom:1px solid rgba(99,102,241,.2);margin-bottom:1.2rem}
+.p-split-ri{font-size:1.1rem;color:#cbd5e1;padding:.5rem 0}
+
+/* Stats */
+.p-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem;margin-bottom:1.5rem}
+.p-stat{padding:2rem;border-radius:20px;background:linear-gradient(135deg,rgba(30,30,60,.6),rgba(20,20,50,.8));border:1px solid rgba(99,102,241,.1);text-align:center;animation:countUp .6s both;transition:all .3s ease}
+.p-stat:hover{border-color:rgba(99,102,241,.3);transform:translateY(-4px);box-shadow:0 8px 30px rgba(99,102,241,.15)}
+.p-stat-l{font-size:1rem;color:#94a3b8;margin-bottom:.8rem}
+.p-stat-v{font-size:3rem;font-weight:900;background:linear-gradient(135deg,#60a5fa,#a78bfa);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:.5rem}
+.p-stat-s{font-size:.85rem;color:#64748b}
+.p-stats-ft{background:rgba(99,102,241,.06);border:1px solid rgba(99,102,241,.12);border-radius:12px;padding:1.2rem 2rem;color:#a5b4fc;text-align:center;white-space:pre-line;font-size:.95rem;animation:fadeInUp .5s .4s both}
+
+/* Table */
+.p-tw{flex:1;display:flex;align-items:center;overflow-x:auto;animation:fadeInUp .5s .2s both}
+.p-tbl{width:100%;border-collapse:separate;border-spacing:0 4px}
+.p-tbl th{padding:.8rem 1rem;font-size:1rem;font-weight:700;color:#94a3b8;text-align:left;border-bottom:2px solid rgba(99,102,241,.2)}
+.p-tbl th.hl{color:#818cf8;font-size:1.1rem}
+.p-tbl td{padding:.7rem 1rem;font-size:1rem;border-bottom:1px solid rgba(51,51,85,.5)}
+.p-tbl td:first-child{font-weight:600;color:#e2e8f0}
+.p-tbl td:not(:first-child){text-align:center;font-size:1.2rem}
+.p-tbl tbody tr{transition:background .2s ease}
+.p-tbl tbody tr:hover{background:rgba(99,102,241,.06)}
+.chk{color:#34d399;filter:drop-shadow(0 0 6px rgba(52,211,153,.4))}
+.crs{color:#f87171;opacity:.4}
+
+/* Pricing */
+.p-pricing{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;flex:1;align-content:center}
+.p-tier{padding:1.5rem;border-radius:16px;background:rgba(30,30,60,.5);border:1px solid rgba(99,102,241,.1);display:flex;flex-direction:column;transition:all .4s cubic-bezier(.16,1,.3,1);animation:scaleIn .5s both;position:relative}
+.p-tier:hover{transform:translateY(-6px);box-shadow:0 12px 40px rgba(99,102,241,.12)}
+.p-tier.pop{background:linear-gradient(135deg,rgba(99,102,241,.15),rgba(139,92,246,.15));border-color:#6366f1;transform:scale(1.05);box-shadow:0 0 40px rgba(99,102,241,.2);animation:borderGlow 3s ease-in-out infinite,scaleIn .5s both}
+.p-tier.pop:hover{transform:scale(1.05) translateY(-6px)}
+.p-tier-badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:linear-gradient(90deg,#6366f1,#8b5cf6);color:#fff;font-size:.7rem;font-weight:800;padding:4px 14px;border-radius:20px;letter-spacing:1px;box-shadow:0 4px 15px rgba(99,102,241,.4)}
+.p-tier-n{font-size:1.4rem;font-weight:700;color:#fff;margin-bottom:.4rem}
+.p-tier-p{font-size:2rem;font-weight:900;color:#a5b4fc;padding-bottom:1rem;border-bottom:1px solid rgba(99,102,241,.15);margin-bottom:1rem}
+.p-tier-d{font-size:.95rem;color:#94a3b8;line-height:1.5;flex:1}
+.p-pex{text-align:center;margin-top:1rem;padding:.8rem 1.5rem;color:#94a3b8;background:rgba(20,20,45,.6);border:1px solid rgba(99,102,241,.08);border-radius:10px;font-size:.9rem}
+
+/* Roadmap */
+.p-road{position:relative;max-width:900px;width:100%;margin:0 auto;flex:1;display:flex;flex-direction:column;justify-content:center;padding-left:3rem}
+.p-road-line{position:absolute;left:1.2rem;top:0;bottom:0;width:3px;background:linear-gradient(180deg,#6366f1,#3b82f6,#1e1b4b);border-radius:3px}
+.p-road-i{display:flex;align-items:center;position:relative;padding:.8rem 0;animation:fadeInLeft .5s both}
+.p-road-dot{position:absolute;left:-2.4rem;width:32px;height:32px;background:#0f0f23;border:3px solid #6366f1;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.8rem;box-shadow:0 0 15px rgba(99,102,241,.4);z-index:1}
+.p-road-c{background:rgba(30,30,60,.5);border:1px solid rgba(99,102,241,.08);border-radius:14px;padding:1rem 1.5rem;width:100%;display:flex;align-items:center;gap:1.5rem;transition:all .3s ease}
+.p-road-c:hover{background:rgba(99,102,241,.08);border-color:rgba(99,102,241,.2);transform:translateX(6px)}
+.p-road-dt{font-weight:800;color:#818cf8;min-width:100px;font-size:1.05rem}
+.p-road-tt{font-size:1.2rem;color:#e2e8f0}
+
+/* Closing */
+.p-close{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.p-close-t{font-size:4rem;font-weight:900;background:linear-gradient(135deg,#60a5fa,#818cf8,#c084fc);background-size:300% 300%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:gradShift 4s ease infinite;margin-bottom:.5rem}
+.p-close-st{font-size:1.4rem;color:#818cf8;margin-bottom:2rem}
+.p-close-con{display:flex;gap:2rem;width:100%;max-width:900px;margin-bottom:2rem}
+.p-close-funds{flex:1;background:rgba(30,30,60,.5);border:1px solid rgba(99,102,241,.1);border-radius:20px;padding:1.5rem 2rem;text-align:left;animation:fadeInLeft .6s both}
+.p-close-ft{font-size:1.3rem;font-weight:700;color:#fff;padding-bottom:.8rem;border-bottom:1px solid rgba(99,102,241,.15);margin-bottom:1rem}
+.p-close-fl{color:#94a3b8;margin-bottom:.5rem;font-size:.9rem}
+.p-fr{display:flex;align-items:center;gap:.8rem;margin-bottom:.6rem}
+.p-fr-pct{width:50px;font-weight:900;color:#818cf8;font-size:.95rem}
+.p-fr-bar{flex:1;height:8px;background:rgba(20,20,45,.8);border-radius:4px;overflow:hidden}
+.p-fr-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,#6366f1,#a78bfa);transition:width 1s cubic-bezier(.16,1,.3,1)}
+.p-fr-lbl{width:140px;color:#94a3b8;font-size:.85rem}
+.p-close-ct{flex:1;display:flex;flex-direction:column;justify-content:center;gap:1rem;padding:1.5rem;animation:fadeInRight .6s .2s both}
+.p-cr{display:flex;align-items:center;gap:1rem;font-size:1.1rem}
+.p-cr-ico{padding:.6rem;background:rgba(30,30,60,.6);border:1px solid rgba(99,102,241,.1);border-radius:10px;font-size:1.3rem}
+.p-cr-txt{color:#cbd5e1}
+.p-close-q{font-size:1.6rem;font-weight:500;color:#fff;font-style:italic;animation:fadeInUp .6s .4s both;position:relative}
+.p-close-q::before,.p-close-q::after{content:'';display:inline-block;width:40px;height:2px;background:linear-gradient(90deg,transparent,#6366f1);vertical-align:middle;margin:0 .8rem}
+.p-close-q::after{background:linear-gradient(90deg,#6366f1,transparent)}
+
+/* Progress */
+.p-prog{position:absolute;bottom:1.2rem;left:0;right:0;display:flex;justify-content:center;align-items:center;gap:6px;z-index:5}
+.p-dot{height:5px;border-radius:3px;transition:all .4s cubic-bezier(.16,1,.3,1);cursor:pointer;border:none;padding:0}
+.p-dot.on{width:32px;background:linear-gradient(90deg,#6366f1,#8b5cf6);box-shadow:0 0 10px rgba(99,102,241,.4)}
+.p-dot.off{width:8px;background:#334155}
+.p-dot.off:hover{background:#64748b;width:12px}
+
+/* Footer */
+.p-foot{height:64px;border-top:1px solid rgba(99,102,241,.08);background:rgba(3,0,20,.9);backdrop-filter:blur(20px);display:flex;align-items:center;justify-content:space-between;padding:0 2rem;position:relative;z-index:2}
+.p-foot-brand{display:flex;align-items:center;gap:.6rem;font-size:1.1rem;font-weight:700;background:linear-gradient(90deg,#818cf8,#a78bfa);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.p-foot-brand svg{color:#818cf8;-webkit-text-fill-color:initial}
+.p-foot-info{color:#475569;font-size:.85rem;margin-left:.8rem}
+.p-foot-ctrl{display:flex;align-items:center;gap:.6rem}
+.p-btn{display:flex;align-items:center;justify-content:center;border:none;cursor:pointer;transition:all .3s ease;border-radius:50%;padding:.6rem}
+.p-btn.prev{background:rgba(30,30,60,.8);color:#94a3b8;border:1px solid rgba(99,102,241,.1)}
+.p-btn.prev:hover:not(:disabled){background:rgba(99,102,241,.15);color:#fff;border-color:rgba(99,102,241,.3)}
+.p-btn.next{background:linear-gradient(135deg,#6366f1,#7c3aed);color:#fff;box-shadow:0 4px 15px rgba(99,102,241,.3)}
+.p-btn.next:hover:not(:disabled){box-shadow:0 6px 25px rgba(99,102,241,.5);transform:scale(1.05)}
+.p-btn:disabled{opacity:.25;cursor:not-allowed}
+.p-btn.fs{background:transparent;color:#64748b;border:1px solid transparent;border-radius:10px}
+.p-btn.fs:hover{color:#fff;background:rgba(99,102,241,.1)}
+.p-div{width:1px;height:28px;background:rgba(99,102,241,.12);margin:0 .4rem}
+
+@media(max-width:900px){
+  .p-slide{padding:2rem}
+  .p-cover-title{font-size:3rem}
+  .p-grid2,.p-stats{grid-template-columns:1fr}
+  .p-pricing{grid-template-columns:repeat(2,1fr)}
+  .p-split,.p-close-con{flex-direction:column}
+  .p-proc{flex-direction:column;gap:2rem}
+  .p-step{width:100%}
+}
+</style>
+</head>
+<body>
+
+<div class="p-root" id="app">
+  <div class="p-bg">
+    <div class="p-orb p-orb-1"></div>
+    <div class="p-orb p-orb-2"></div>
+    <div class="p-orb p-orb-3"></div>
+    <div class="p-grid"></div>
+    <div class="p-particles" id="particles"></div>
+  </div>
+
+  <main class="p-main">
+    <div class="p-frame">
+      <div class="p-snum" id="slideNum">1 / 12</div>
+
+      <!-- Slide 1: Cover -->
+      <div class="p-slide active" data-slide="0">
+        <div class="p-cover">
+          <div class="p-cover-icon">🎼🤖</div>
+          <h1 class="p-cover-title">Vsonice</h1>
+          <h2 class="p-cover-sub">AI-Powered Voice & Music Studio</h2>
+          <div class="p-cover-q">"Sesinizi Dönüştürün, Müziğinizi Yaratın"</div>
+        </div>
+      </div>
+
+      <!-- Slide 2: Bullets -->
+      <div class="p-slide" data-slide="1">
+        <h2 class="p-title">🎧 Problem: Müzik Üretimindeki Büyük Sorun</h2>
+        <ul class="p-blist">
+          <li class="p-bi" style="animation-delay:.0s"><span class="p-bi-ico">✦</span><span>Profesyonel müzik prodüksiyonu için birden fazla pahalı yazılım gerekiyor<br>(Pro Tools: $599/yıl, iZotope RX: $499, stüdyo: $50–200/saat)</span></li>
+          <li class="p-bi" style="animation-delay:.08s"><span class="p-bi-ico">✦</span><span>AI ses araçları dağınık ve entegre değil</span></li>
+          <li class="p-bi" style="animation-delay:.16s"><span class="p-bi-ico">✦</span><span>Kullanıcılar birden fazla platform arasında geçiş yapmak zorunda</span></li>
+          <li class="p-bi" style="animation-delay:.24s"><span class="p-bi-ico">✦</span><span>Ses klonlama ve müzik üretimi teknik bilgi gerektiriyor</span></li>
+          <li class="p-bi" style="animation-delay:.32s"><span class="p-bi-ico">✦</span><span>Bağımsız sanatçılar ve içerik üreticileri bu maliyetleri karşılayamıyor</span></li>
+          <li class="p-bi" style="animation-delay:.40s"><span class="p-bi-ico">✦</span><span>Mevcut çözümler uçtan uca iş akışı sunmuyor</span></li>
+        </ul>
+      </div>
+
+      <!-- Slide 3: Grid -->
+      <div class="p-slide" data-slide="2">
+        <h2 class="p-title">🚀 Çözüm: Hepsi Bir Arada AI Müzik Stüdyosu</h2>
+        <p class="p-qbar">"Ses klonlama, müzik üretme, vokal ayırma ve profesyonel miksaj — tek bir web platformunda."</p>
+        <div class="p-grid2">
+          <div class="p-card" style="animation-delay:.0s"><span class="p-card-ico">🎤</span><div class="p-card-t">AI Ses Klonlama</div><div class="p-card-d">Herhangi bir sesi saniyeler içinde klonla</div></div>
+          <div class="p-card" style="animation-delay:.1s"><span class="p-card-ico">🎼</span><div class="p-card-t">AI Ses Ayırma</div><div class="p-card-d">Şarkıları vokal, davul, bas ve enstrümanlara ayır</div></div>
+          <div class="p-card" style="animation-delay:.2s"><span class="p-card-ico">🎹</span><div class="p-card-t">DAW Studio</div><div class="p-card-d">Tarayıcıda tam donanımlı müzik prodüksiyon ortamı</div></div>
+          <div class="p-card" style="animation-delay:.3s"><span class="p-card-ico">🎵</span><div class="p-card-t">AI Müzik Üretimi</div><div class="p-card-d">Metinden müzik üret</div></div>
+        </div>
+      </div>
+
+      <!-- Slide 4: Grid -->
+      <div class="p-slide" data-slide="3">
+        <h2 class="p-title">🖥️ Ürünümüz: Ana Modüller</h2>
+        <p class="p-qbar">Gerçek ekran görüntüleri entegrasyonu için hazır modüller:</p>
+        <div class="p-grid2">
+          <div class="p-card" style="animation-delay:.0s"><span class="p-card-ico">1️⃣</span><div class="p-card-t">DAW Studio</div><div class="p-card-d">Piano Roll, Timeline, Mixer, Clip Editor</div></div>
+          <div class="p-card" style="animation-delay:.1s"><span class="p-card-ico">2️⃣</span><div class="p-card-t">Ses Ayırma Paneli</div><div class="p-card-d">Waveform gösterimi + stem export</div></div>
+          <div class="p-card" style="animation-delay:.2s"><span class="p-card-ico">3️⃣</span><div class="p-card-t">Ses Klonlama Arayüzü</div><div class="p-card-d">Model yükleme & eğitim paneli</div></div>
+          <div class="p-card" style="animation-delay:.3s"><span class="p-card-ico">4️⃣</span><div class="p-card-t">Stem Mixer & Editor</div><div class="p-card-d">Ayrıştırılmış parçaları miksleme</div></div>
+        </div>
+      </div>
+
+      <!-- Slide 5: Process -->
+      <div class="p-slide" data-slide="4">
+        <h2 class="p-title">⚙️ Nasıl Çalışır?</h2>
+        <p class="p-stitle">3 Adımda Müzik Üretin</p>
+        <div class="p-proc">
+          <div class="p-proc-line"></div>
+          <div class="p-step" style="animation-delay:.0s"><div class="p-step-c">1</div><div class="p-step-t">Yükle veya Kaydet</div><div class="p-step-d">Ses dosyanı yükle veya tarayıcıdan kayıt al</div></div>
+          <div class="p-step" style="animation-delay:.15s"><div class="p-step-c" style="animation-delay:.5s">2</div><div class="p-step-t">AI İşlesin</div><div class="p-step-d">Ayırma, klonlama veya müzik üretimi</div></div>
+          <div class="p-step" style="animation-delay:.30s"><div class="p-step-c" style="animation-delay:1s">3</div><div class="p-step-t">Mixle & İndir</div><div class="p-step-d">DAW Studio'da düzenle ve profesyonel çıktı al</div></div>
+        </div>
+      </div>
+
+      <!-- Slide 6: Split -->
+      <div class="p-slide" data-slide="5">
+        <h2 class="p-title">🤖 Teknoloji & AI Altyapısı</h2>
+        <p class="p-stitle">Son Teknoloji AI Motoru</p>
+        <div class="p-split">
+          <div class="p-split-l">
+            <div class="p-split-i" style="animation-delay:.0s"><span class="p-split-it">Demucs</span><span class="p-split-id">— Gelişmiş ses ayırma modeli</span></div>
+            <div class="p-split-i" style="animation-delay:.08s"><span class="p-split-it">OpenVoice V2</span><span class="p-split-id">— Nöral ses klonlama</span></div>
+            <div class="p-split-i" style="animation-delay:.16s"><span class="p-split-it">AudioCraft / MusicGen</span><span class="p-split-id">— Metinden müzik üretimi</span></div>
+            <div class="p-split-i" style="animation-delay:.24s"><span class="p-split-it">Custom Voice</span><span class="p-split-id">— LoRA-style model eğitimi</span></div>
+            <div class="p-split-i" style="animation-delay:.32s"><span class="p-split-it">GPU Hızlandırma</span><span class="p-split-id">— CUDA destekli gerçek zamanlı işlem</span></div>
+          </div>
+          <div class="p-split-r">
+            <div class="p-split-rt">Alt Yapı</div>
+            <div class="p-split-ri">⚛️ React + TypeScript (Frontend)</div>
+            <div class="p-split-ri">🐍 FastAPI + PyTorch (Backend)</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Slide 7: Stats -->
+      <div class="p-slide" data-slide="6">
+        <h2 class="p-title" style="text-align:center">🌍 Pazar Büyüklüğü</h2>
+        <p class="p-stitle" style="text-align:center">Devasa ve Büyüyen Bir Pazar</p>
+        <div class="p-stats">
+          <div class="p-stat" style="animation-delay:.0s"><div class="p-stat-l">Küresel Müzik Yazılımı</div><div class="p-stat-v">$14.2B</div><div class="p-stat-s">(2030) $8.6B'den büyüyor</div></div>
+          <div class="p-stat" style="animation-delay:.15s"><div class="p-stat-l">AI Müzik Pazarı</div><div class="p-stat-v">$12.6B</div><div class="p-stat-s">CAGR %28 ($2.9B'den)</div></div>
+          <div class="p-stat" style="animation-delay:.30s"><div class="p-stat-l">Ses Klonlama</div><div class="p-stat-v">$5.7B</div><div class="p-stat-s">$1.6B'den büyüyor</div></div>
+        </div>
+        <div class="p-stats-ft">🎵 50M+ bağımsız müzik üreticisi | 📱 200M+ içerik üretici
+Platform ekosistemi: Spotify, SoundCloud, YouTube, TikTok, Instagram</div>
+      </div>
+
+      <!-- Slide 8: Grid -->
+      <div class="p-slide" data-slide="7">
+        <h2 class="p-title">👥 Hedef Kitle</h2>
+        <p class="p-stitle">Kimler Kullanacak?</p>
+        <div class="p-grid2">
+          <div class="p-card" style="animation-delay:.0s"><span class="p-card-ico">🎤</span><div class="p-card-t">Bağımsız Sanatçılar</div><div class="p-card-d">Düşük bütçeyle profesyonel kalite</div></div>
+          <div class="p-card" style="animation-delay:.1s"><span class="p-card-ico">🎬</span><div class="p-card-t">İçerik Üreticileri</div><div class="p-card-d">YouTube, TikTok, Podcast için müzik & ses</div></div>
+          <div class="p-card" style="animation-delay:.2s"><span class="p-card-ico">🎧</span><div class="p-card-t">DJ & Remix Sanatçıları</div><div class="p-card-d">Stem ayırma ve remix üretimi</div></div>
+          <div class="p-card" style="animation-delay:.3s"><span class="p-card-ico">🏢</span><div class="p-card-t">Stüdyolar & Prodüktörler</div><div class="p-card-d">İş akışını hızlandırma</div></div>
+        </div>
+      </div>
+
+      <!-- Slide 9: Table -->
+      <div class="p-slide" data-slide="8">
+        <h2 class="p-title">🏆 Rekabet Avantajı</h2>
+        <p class="p-stitle">Neden Vsonice?</p>
+        <div class="p-tw">
+          <table class="p-tbl">
+            <thead><tr><th>Özellik</th><th class="hl">Vsonice</th><th>ElevenLabs</th><th>Suno AI</th><th>LALAL.AI</th><th>Pro Tools</th></tr></thead>
+            <tbody>
+              <tr><td>Ses Klonlama</td><td><span class="chk">✅</span></td><td><span class="chk">✅</span></td><td><span class="crs">❌</span></td><td><span class="crs">❌</span></td><td><span class="crs">❌</span></td></tr>
+              <tr><td>Ses Ayırma</td><td><span class="chk">✅</span></td><td><span class="crs">❌</span></td><td><span class="crs">❌</span></td><td><span class="chk">✅</span></td><td><span class="crs">❌</span></td></tr>
+              <tr><td>Müzik Üretimi</td><td><span class="chk">✅</span></td><td><span class="crs">❌</span></td><td><span class="chk">✅</span></td><td><span class="crs">❌</span></td><td><span class="crs">❌</span></td></tr>
+              <tr><td>DAW Studio</td><td><span class="chk">✅</span></td><td><span class="crs">❌</span></td><td><span class="crs">❌</span></td><td><span class="crs">❌</span></td><td><span class="chk">✅</span></td></tr>
+              <tr><td>Model Eğitimi</td><td><span class="chk">✅</span></td><td><span class="crs">❌</span></td><td><span class="crs">❌</span></td><td><span class="crs">❌</span></td><td><span class="crs">❌</span></td></tr>
+              <tr><td>Web Tabanlı</td><td><span class="chk">✅</span></td><td><span class="chk">✅</span></td><td><span class="chk">✅</span></td><td><span class="chk">✅</span></td><td><span class="crs">❌</span></td></tr>
+              <tr><td>Hepsi Bir Arada</td><td><span class="chk">✅</span></td><td><span class="crs">❌</span></td><td><span class="crs">❌</span></td><td><span class="crs">❌</span></td><td><span class="crs">❌</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Slide 10: Pricing -->
+      <div class="p-slide" data-slide="9">
+        <h2 class="p-title" style="text-align:center">💰 Gelir Modeli</h2>
+        <p class="p-stitle" style="text-align:center">Katmanlı Abonelik Sistemi</p>
+        <div class="p-pricing">
+          <div class="p-tier" style="animation-delay:.0s"><div class="p-tier-n">Ücretsiz</div><div class="p-tier-p">$0</div><div class="p-tier-d">Aylık 5 işlem</div></div>
+          <div class="p-tier pop" style="animation-delay:.1s"><div class="p-tier-badge">POPÜLER</div><div class="p-tier-n">Pro</div><div class="p-tier-p">$14.99/ay</div><div class="p-tier-d">Sınırsız işlem, yüksek kalite export</div></div>
+          <div class="p-tier" style="animation-delay:.2s"><div class="p-tier-n">Studio</div><div class="p-tier-p">$39.99/ay</div><div class="p-tier-d">Takım erişimi, API, model eğitimi</div></div>
+          <div class="p-tier" style="animation-delay:.3s"><div class="p-tier-n">Enterprise</div><div class="p-tier-p">Özel</div><div class="p-tier-d">On-premise, özel model, SLA</div></div>
+        </div>
+        <div class="p-pex">Ek Gelir: API kullanım ücretleri, Voice Marketplace (ses modeli satışı)</div>
+      </div>
+
+      <!-- Slide 11: Roadmap -->
+      <div class="p-slide" data-slide="10">
+        <h2 class="p-title" style="text-align:center">🗺️ Yol Haritası</h2>
+        <div class="p-road">
+          <div class="p-road-line"></div>
+          <div class="p-road-i" style="animation-delay:.0s"><div class="p-road-dot">✅</div><div class="p-road-c"><div class="p-road-dt">Q1 2026</div><div class="p-road-tt">MVP Tamamlandı</div></div></div>
+          <div class="p-road-i" style="animation-delay:.1s"><div class="p-road-dot">🚀</div><div class="p-road-c"><div class="p-road-dt">Q2 2026</div><div class="p-road-tt">Mobil uygulama (React Native)</div></div></div>
+          <div class="p-road-i" style="animation-delay:.2s"><div class="p-road-dot">🛒</div><div class="p-road-c"><div class="p-road-dt">Q3 2026</div><div class="p-road-tt">AI Voice Marketplace & İşbirliği</div></div></div>
+          <div class="p-road-i" style="animation-delay:.3s"><div class="p-road-dot">🎤</div><div class="p-road-c"><div class="p-road-dt">Q4 2026</div><div class="p-road-tt">Canlı performans modu & VST</div></div></div>
+          <div class="p-road-i" style="animation-delay:.4s"><div class="p-road-dot">🌍</div><div class="p-road-c"><div class="p-road-dt">2027</div><div class="p-road-tt">AI Mastering, Video-ses senk., Global ölçeklenme</div></div></div>
+        </div>
+      </div>
+
+      <!-- Slide 12: Closing -->
+      <div class="p-slide" data-slide="11">
+        <div class="p-close">
+          <h2 class="p-close-t">🔥 Bize Katılın</h2>
+          <p class="p-close-st">Yatırım Talebi & Kapanış</p>
+          <div class="p-close-con">
+            <div class="p-close-funds">
+              <div class="p-close-ft">💵 Yatırım Talebi: _______</div>
+              <p class="p-close-fl">Fon Kullanımı:</p>
+              <div class="p-fr"><div class="p-fr-pct">%40</div><div class="p-fr-bar"><div class="p-fr-fill" style="width:40%"></div></div><div class="p-fr-lbl">Ürün geliştirme</div></div>
+              <div class="p-fr"><div class="p-fr-pct">%30</div><div class="p-fr-bar"><div class="p-fr-fill" style="width:30%"></div></div><div class="p-fr-lbl">Pazarlama</div></div>
+              <div class="p-fr"><div class="p-fr-pct">%20</div><div class="p-fr-bar"><div class="p-fr-fill" style="width:20%"></div></div><div class="p-fr-lbl">GPU altyapısı</div></div>
+              <div class="p-fr"><div class="p-fr-pct">%10</div><div class="p-fr-bar"><div class="p-fr-fill" style="width:10%"></div></div><div class="p-fr-lbl">Operasyonel giderler</div></div>
+            </div>
+            <div class="p-close-ct">
+              <div class="p-cr"><span class="p-cr-ico">👤</span><span class="p-cr-txt">İletişim: Batuhan Çelikkaya</span></div>
+              <div class="p-cr"><span class="p-cr-ico">📧</span><span class="p-cr-txt">E-posta: batuhan.celikkaya@hotmail.com</span></div>
+            </div>
+          </div>
+          <p class="p-close-q">"Müziğin Geleceği Yapay Zeka ile Şekilleniyor — Vsonice"</p>
+        </div>
+      </div>
+
+      <!-- Progress Dots -->
+      <div class="p-prog" id="dots"></div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="p-foot">
+    <div style="display:flex;align-items:center">
+      <div class="p-foot-brand">
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+        Vsonice Pitch
+      </div>
+      <span class="p-foot-info" id="footInfo">| Slayt 1 / 12</span>
+    </div>
+    <div class="p-foot-ctrl">
+      <button class="p-btn prev" id="btnPrev" onclick="prev()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      </button>
+      <button class="p-btn next" id="btnNext" onclick="next()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+      <div class="p-div"></div>
+      <button class="p-btn fs" onclick="toggleFS()" title="Tam Ekran">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" x2="14" y1="3" y2="10"/><line x1="3" x2="10" y1="21" y2="14"/></svg>
+      </button>
+    </div>
+  </footer>
+</div>
+
+<script>
+// Particles
+(function(){
+  var c=document.getElementById('particles');
+  for(var i=0;i<30;i++){
+    var d=document.createElement('div');
+    d.className='p-pt';
+    d.style.left=Math.random()*100+'%';
+    d.style.width=d.style.height=(2+Math.random()*3)+'px';
+    d.style.opacity=0.2+Math.random()*0.5;
+    d.style.animationDuration=(8+Math.random()*12)+'s';
+    d.style.animationDelay=(Math.random()*10)+'s';
+    c.appendChild(d);
+  }
+})();
+
+var cur=0, total=12;
+var slides=document.querySelectorAll('.p-slide');
+var dotsC=document.getElementById('dots');
+
+// Build dots
+for(var i=0;i<total;i++){
+  var b=document.createElement('button');
+  b.className='p-dot '+(i===0?'on':'off');
+  b.setAttribute('data-i',i);
+  b.onclick=function(){goTo(parseInt(this.getAttribute('data-i')))};
+  dotsC.appendChild(b);
+}
+
+function goTo(idx){
+  if(idx<0||idx>=total||idx===cur) return;
+  slides[cur].classList.remove('active','rev');
+  cur=idx;
+  slides[cur].classList.remove('rev');
+  slides[cur].classList.add('active');
+  // update dots
+  var dots=dotsC.querySelectorAll('.p-dot');
+  dots.forEach(function(d,i){d.className='p-dot '+(i===cur?'on':'off')});
+  document.getElementById('slideNum').textContent=(cur+1)+' / '+total;
+  document.getElementById('footInfo').textContent='| Slayt '+(cur+1)+' / '+total;
+  document.getElementById('btnPrev').disabled=cur===0;
+  document.getElementById('btnNext').disabled=cur===total-1;
+  // re-trigger animations by cloning
+  var s=slides[cur];
+  var p=s.parentNode;
+  var cl=s.cloneNode(true);
+  cl.classList.add('active');
+  p.replaceChild(cl,s);
+  slides=document.querySelectorAll('.p-slide');
+}
+
+function next(){if(cur<total-1)goTo(cur+1)}
+function prev(){if(cur>0)goTo(cur-1)}
+
+function toggleFS(){
+  if(!document.fullscreenElement){document.documentElement.requestFullscreen().catch(function(){})}
+  else{document.exitFullscreen()}
+}
+
+document.addEventListener('keydown',function(e){
+  if(e.key==='ArrowRight'||e.key===' '){e.preventDefault();next()}
+  if(e.key==='ArrowLeft'){e.preventDefault();prev()}
+  if(e.key==='Home'){e.preventDefault();goTo(0)}
+  if(e.key==='End'){e.preventDefault();goTo(total-1)}
+});
+
+document.getElementById('btnPrev').disabled=true;
+</script>
+</body>
+</html>

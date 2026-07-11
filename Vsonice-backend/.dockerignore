@@ -1,0 +1,12 @@
+venv/
+.venv-neural/
+vendor/
+!vendor/seed-vc/requirements-worker.txt
+__pycache__/
+*.pyc
+uploads/
+output/
+temp/
+checkpoints/
+Dockerfile
+.dockerignore

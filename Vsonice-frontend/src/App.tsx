@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom'
-import { Home, Mic, AudioLines, SlidersHorizontal, Sliders, Piano, FileText, Music, RefreshCw, Upload, Menu, X } from 'lucide-react'
+import { Home, Mic, AudioLines, SlidersHorizontal, Sliders, Piano, FileText, Music, RefreshCw, Upload, Menu, X, Sparkles } from 'lucide-react'
 import './App.css'
 import Welcome from './components/Welcome'
 import MusicGenerator from './components/MusicGenerator'
@@ -13,6 +13,10 @@ import StemMixer from './components/StemMixer'
 import VoiceCloneSongMaker from './components/VoiceCloneSongMaker'
 import ProfessionalStudio from './components/ProfessionalStudio'
 import DAWStudio from './components/daw/DAWStudio'
+import PitchDeck from './components/PitchDeck'
+import VocalEditor from './components/VocalEditor'
+import VocalLab from './components/VocalLab'
+import StudioWorkflow from './components/StudioWorkflow'
 
 function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -24,11 +28,17 @@ function App() {
     return <DAWStudio />
   }
 
+  // Pitch Deck gets full-screen layout (no sidebar)
+  if (location.pathname === '/pitch') {
+    return <PitchDeck />
+  }
+
   const navGroups: { label: string; items: { to: string; icon: React.ReactNode; label: string; end?: boolean }[] }[] = [
     {
       label: 'Ana Menü',
       items: [
         { to: '/', icon: <Home size={18} />, label: 'Ana Sayfa', end: true },
+        { to: '/workflow', icon: <Sparkles size={18} />, label: 'Pro Workflow' },
       ]
     },
     {
@@ -45,6 +55,8 @@ function App() {
       items: [
         { to: '/studio', icon: <Piano size={18} />, label: 'DAW Studio' },
         { to: '/metin-sarki', icon: <FileText size={18} />, label: 'Metin → Şarkı' },
+        { to: '/vokal-editor', icon: <Sliders size={18} />, label: 'Vokal Editör' },
+        { to: '/vocal-lab', icon: <AudioLines size={18} />, label: 'Vocal Lab 🔬' },
         { to: '/muzik-uret', icon: <Music size={18} />, label: 'Müzik Üret' },
       ]
     },
@@ -53,6 +65,7 @@ function App() {
       items: [
         { to: '/ses-donustur', icon: <RefreshCw size={18} />, label: 'Ses Dönüştür' },
         { to: '/yukle', icon: <Upload size={18} />, label: 'Dosya Yükle' },
+        { to: '/pitch', icon: <FileText size={18} />, label: 'Pitch Deck' },
       ]
     }
   ]
@@ -127,7 +140,10 @@ function App() {
         <div className="content-wrapper">
           <Routes>
             <Route path="/" element={<Welcome />} />
+            <Route path="/workflow" element={<StudioWorkflow />} />
             <Route path="/metin-sarki" element={<TextToSongGenerator />} />
+            <Route path="/vokal-editor" element={<VocalEditor />} />
+            <Route path="/vocal-lab" element={<VocalLab />} />
             <Route path="/stem-ayir" element={<AudioSeparator />} />
             <Route path="/stem-editor" element={<AudioStemEditor />} />
             <Route path="/stem-mixer" element={<StemMixer />} />
@@ -136,6 +152,7 @@ function App() {
             <Route path="/ses-donustur" element={<VoiceConverter />} />
             <Route path="/yukle" element={<AudioUploader />} />
             <Route path="/studio" element={<ProfessionalStudio />} />
+            <Route path="/pitch" element={<PitchDeck />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>

@@ -458,6 +458,15 @@ class VoiceModelTrainer:
                 sample_filename = f"sample_{len(metadata['sample_info']):03d}_{int(time.time())}.wav"
                 sample_path = samples_dir / sample_filename
                 sf.write(str(sample_path), audio_pp, sr)
+
+                # Tam çözünürlüklü kopya (44.1kHz) — Seed-VC referansı için.
+                # OpenVoice sr'ı (22k) Seed-VC kalitesini yarıya düşürür.
+                try:
+                    audio_hq, _ = librosa.load(audio_path, sr=44100)
+                    ref_path = samples_dir / f"ref_{sample_filename}"
+                    sf.write(str(ref_path), preprocess_vocal(audio_hq, 44100), 44100)
+                except Exception as _e:
+                    print(f"[VoiceTrainer] ⚠️ HQ referans kopyası yazılamadı: {_e}")
                 
                 # Extract speaker embedding
                 se = extract_speaker_embedding(str(sample_path), converter)

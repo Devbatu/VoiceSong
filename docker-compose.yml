@@ -1,0 +1,38 @@
+services:
+  backend:
+    build: ./Vsonice-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Kalıcı veri
+      - ./Vsonice-backend/uploads:/app/uploads
+      - ./Vsonice-backend/output:/app/output
+      - ./Vsonice-backend/temp:/app/temp
+      # Model önbellekleri (ilk indirmeden sonra kalıcı)
+      - seedvc-checkpoints:/app/vendor/seed-vc/checkpoints
+      - hf-cache:/root/.cache/huggingface
+      - torch-cache:/root/.cache/torch
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./Vsonice-frontend
+      args:
+        VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  seedvc-checkpoints:
+  hf-cache:
+  torch-cache:

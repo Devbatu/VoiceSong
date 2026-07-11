@@ -107,7 +107,14 @@ export default function Welcome() {
           AI destekli ses klonlama, stem ayırma ve profesyonel müzik üretim platformu
         </p>
         <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
-          <button className="btn" onClick={() => navigate('/ses-klonla')} style={{ padding: '0.85rem 2rem' }}>
+          <button className="btn" onClick={() => navigate('/workflow')} style={{
+            padding: '0.85rem 2rem',
+            background: 'linear-gradient(135deg, #6366f1, #ec4899)',
+            fontWeight: 700, fontSize: '1rem',
+          }}>
+            ✨ Pro Workflow
+          </button>
+          <button className="btn btn-secondary" onClick={() => navigate('/ses-klonla')} style={{ padding: '0.85rem 2rem' }}>
             Ses Klonla
           </button>
           <button className="btn btn-secondary" onClick={() => navigate('/stem-ayir')} style={{ padding: '0.85rem 2rem' }}>
@@ -116,6 +123,63 @@ export default function Welcome() {
           <button className="btn btn-secondary" onClick={() => navigate('/studio')} style={{ padding: '0.85rem 2rem' }}>
             Studio
           </button>
+        </div>
+      </div>
+
+      {/* Pro Workflow Banner */}
+      <div
+        onClick={() => navigate('/workflow')}
+        style={{
+          padding: '1.5rem 2rem',
+          background: 'linear-gradient(135deg, rgba(99,102,241,0.12), rgba(236,72,153,0.12))',
+          border: '1.5px solid rgba(99,102,241,0.3)',
+          borderRadius: 'var(--radius-xl)',
+          cursor: 'pointer',
+          transition: 'all 0.25s ease',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '1.5rem',
+          flexWrap: 'wrap',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.borderColor = '#6366f1'
+          e.currentTarget.style.transform = 'translateY(-2px)'
+          e.currentTarget.style.boxShadow = '0 8px 30px rgba(99,102,241,0.15)'
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.borderColor = 'rgba(99,102,241,0.3)'
+          e.currentTarget.style.transform = 'translateY(0)'
+          e.currentTarget.style.boxShadow = 'none'
+        }}
+      >
+        <div style={{
+          width: '52px', height: '52px', borderRadius: 'var(--radius-md)',
+          background: 'linear-gradient(135deg, #6366f1, #ec4899)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0,
+        }}>
+          <Sparkles size={26} color="white" />
+        </div>
+        <div style={{ flex: 1, minWidth: '200px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem' }}>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 700 }}>Profesyonel Workflow</h3>
+            <span style={{
+              fontSize: '0.65rem', fontWeight: 700, padding: '0.2rem 0.5rem',
+              borderRadius: '20px', background: '#10b98122', color: '#10b981',
+              textTransform: 'uppercase', letterSpacing: '0.5px',
+            }}>YENİ</span>
+          </div>
+          <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            İndir → Ayır → Klonla → Üret → Masterla → Dışa Aktar — Tek sayfada 6 adımlık profesyonel pipeline
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+          {['📥', '🎧', '🎤', '🎸', '🎚', '📤'].map((e, i) => (
+            <span key={i} style={{
+              fontSize: '1.2rem', padding: '0.3rem',
+              background: 'rgba(255,255,255,0.05)', borderRadius: '6px',
+            }}>{e}</span>
+          ))}
         </div>
       </div>
 
